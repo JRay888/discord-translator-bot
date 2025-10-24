@@ -5,18 +5,36 @@ A Discord bot that automatically translates messages to different languages base
 ## Features
 
 - 🌍 **Multi-language support** - Supports 100+ languages via Google Translate
-- 🔧 **Channel-specific settings** - Set different target languages for different channels
-- 🤖 **Automatic translation** - Messages are automatically translated to the channel's language
+- 👥 **Translation Groups** - Group multiple channels together for automatic cross-translation
+- 🚩 **Flag Reactions** - React with flag emojis to translate messages on-demand
+- 🤖 **Automatic translation** - Messages in grouped channels are automatically translated
 - 💬 **Preserved context** - Shows original author and source/target languages
-- 🔐 **Permission-based** - Only users with channel management permissions can configure languages
+- 🔐 **Permission-based** - Only users with channel management permissions can configure settings
 
 ## Commands
 
+### Translation Groups
+
 | Command | Description | Permission Required |
 |---------|-------------|-------------------|
-| `!setlang <code>` | Set the target language for the current channel | Manage Channels |
-| `!getlang` | Display the current language setting | None |
-| `!removelang` | Remove language setting for the channel | Manage Channels |
+| `!creategroup <name>` | Create a new translation group | Manage Channels |
+| `!addchannel <group> <lang>` | Add current channel to a group with language | Manage Channels |
+| `!removechannel` | Remove current channel from its group | Manage Channels |
+| `!deletegroup <name>` | Delete a translation group | Manage Channels |
+| `!listgroups` | List all translation groups | None |
+
+### Flag Reactions
+
+| Command | Description | Permission Required |
+|---------|-------------|-------------------|
+| `!enableflags` | Enable flag reactions in current channel | Manage Channels |
+| `!disableflags` | Disable flag reactions in current channel | Manage Channels |
+
+### General
+
+| Command | Description | Permission Required |
+|---------|-------------|-------------------|
+| `!channelinfo` | Display current channel's translation settings | None |
 | `!listlangs` | Show common language codes | None |
 
 ## Setup
@@ -77,6 +95,7 @@ pip install -r requirements.txt
    - Send Messages
    - Embed Links
    - Read Message History
+   - Add Reactions
    - Manage Messages (optional)
 4. Copy the generated URL and open it in your browser
 5. Select your server and authorize
@@ -89,23 +108,61 @@ python bot.py
 
 ## Usage Examples
 
-### Setting up language rooms
+### Setting up Translation Groups
+
+Create a group where messages are automatically translated between channels:
 
 ```
+# Create a group for general chat
+!creategroup general
+
+# In your #english channel
+!addchannel general en
+
 # In your #spanish channel
-!setlang es
+!addchannel general es
 
 # In your #french channel
-!setlang fr
-
-# In your #japanese channel
-!setlang ja
+!addchannel general fr
 ```
+
+Now messages in any of these channels will automatically appear translated in the other channels!
+
+### Setting up Flag Reactions
+
+Enable on-demand translation via flag reactions:
+
+```
+# In any channel where you want flag reactions
+!enableflags
+```
+
+Users can now react to any message with a flag emoji (🇪🇸, 🇫🇷, 🇯🇵, etc.) to get an instant translation!
+
+### Supported Flag Emojis
+
+- 🇺🇸 🇬🇧 English
+- 🇪🇸 🇲🇽 Spanish
+- 🇫🇷 French
+- 🇩🇪 German
+- 🇮🇹 Italian
+- 🇵🇹 🇧🇷 Portuguese
+- 🇷🇺 Russian
+- 🇯🇵 Japanese
+- 🇰🇷 Korean
+- 🇨🇳 Chinese
+- 🇸🇦 Arabic
+- 🇮🇳 Hindi
+- And many more!
 
 ### Checking configuration
 
 ```
-!getlang
+# View current channel settings
+!channelinfo
+
+# List all groups
+!listgroups
 ```
 
 ### Viewing available languages
@@ -134,22 +191,40 @@ For a complete list, see [Google Translate Language Codes](https://cloud.google.
 
 ## How It Works
 
-1. Server administrators set a target language for each channel using `!setlang`
-2. When users send messages in those channels, the bot:
-   - Detects the source language
-   - Translates to the target language (if different)
-   - Posts the translation with the author's name and language info
-3. The original message remains visible for context
+### Translation Groups
+
+1. Server administrators create translation groups and add channels to them
+2. When a user sends a message in any grouped channel:
+   - The bot detects which group the channel belongs to
+   - Translates the message to all other languages in that group
+   - Posts translations in each corresponding channel
+3. Each group operates independently
+
+### Flag Reactions
+
+1. Server administrators enable flag reactions in specific channels
+2. When a user reacts to a message with a flag emoji:
+   - The bot detects which language the flag represents
+   - Translates the message to that language
+   - Replies to the message with the translation
+3. Multiple users can request different translations of the same message
 
 ## Configuration Storage
 
-Language settings are stored in `language_config.json` in the bot's directory. This file is automatically created and updated when you use the `!setlang` command.
+All settings are stored in `language_config.json` in the bot's directory:
+- Translation groups and their channel mappings
+- Flag-enabled channels
+
+This file is automatically created and updated when you use bot commands.
+
+**Note:** If deploying to Railway or similar platforms, this file will reset on container restart unless you set up persistent storage or use environment variables.
 
 ## Troubleshooting
 
 ### Bot doesn't respond
 - Check that Message Content Intent is enabled in Discord Developer Portal
 - Verify the bot has proper permissions in your server
+- For flag reactions, ensure the bot has Add Reactions permission
 
 ### Translation errors
 - The bot uses Google Translate's free API which may have rate limits
