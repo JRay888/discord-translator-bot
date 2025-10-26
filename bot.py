@@ -71,7 +71,9 @@ def load_registration_config():
             return json.load(f)
     return {
         'holding_room_channel_id': None,  # Channel ID where new members appear
-        'registered_members': {}  # member_id: {ign, gang_code, rank}
+        'leadership_approval_channel_id': None,  # Channel for R4/R5 approvals
+        'registered_members': {},  # member_id: {ign, gang_code, rank}
+        'pending_approvals': {}  # member_id: {ign, gang_code, rank, message_id}
     }
 
 
@@ -92,8 +94,12 @@ if 'flag_enabled_channels' not in language_config:
     language_config['flag_enabled_channels'] = []
 if 'holding_room_channel_id' not in registration_config:
     registration_config['holding_room_channel_id'] = None
+if 'leadership_approval_channel_id' not in registration_config:
+    registration_config['leadership_approval_channel_id'] = None
 if 'registered_members' not in registration_config:
     registration_config['registered_members'] = {}
+if 'pending_approvals' not in registration_config:
+    registration_config['pending_approvals'] = {}
 
 
 # Registration Modal Class
@@ -155,51 +161,89 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
             if not gang_role:
                 gang_role = await guild.create_role(name=gang_code_input, mentionable=True)
             
+            # Remove DaviesLocker role if they have it
+            davies_locker_role = discord.utils.get(guild.roles, name='DaviesLocker')
+            if davies_locker_role and davies_locker_role in member.roles:
+                await member.remove_roles(davies_locker_role)
+            
             # Determine rank roles
             roles_to_add = [gang_role]
             
-            # R1-R3 get Pirate role
+            # R1-R3 get Pirate role immediately
             if rank_input in ['R1', 'R2', 'R3']:
                 pirate_role = discord.utils.get(guild.roles, name='Pirate')
                 if not pirate_role:
                     pirate_role = await guild.create_role(name='Pirate', mentionable=True)
                 roles_to_add.append(pirate_role)
-            # R4 gets R4 role
-            elif rank_input == 'R4':
-                r4_role = discord.utils.get(guild.roles, name='R4')
-                if not r4_role:
-                    r4_role = await guild.create_role(name='R4', mentionable=True)
-                roles_to_add.append(r4_role)
-            # R5 gets R5 role
-            elif rank_input == 'R5':
-                r5_role = discord.utils.get(guild.roles, name='R5')
-                if not r5_role:
-                    r5_role = await guild.create_role(name='R5', mentionable=True)
-                roles_to_add.append(r5_role)
-            
-            # Everyone gets GenUser role
-            genuser_role = discord.utils.get(guild.roles, name='GenUser')
-            if not genuser_role:
-                genuser_role = await guild.create_role(name='GenUser', mentionable=True)
-            roles_to_add.append(genuser_role)
-            
-            # Add all roles
-            await member.add_roles(*roles_to_add)
-            
-            # Save registration data
-            registration_config['registered_members'][str(member.id)] = {
-                'ign': ign_input,
-                'gang_code': gang_code_input,
-                'rank': rank_input
-            }
-            save_registration_config(registration_config)
-            
-            await interaction.response.send_message(
-                f'✅ Registration complete!\n'
-                f'**Nickname:** {new_nickname}\n'
-                f'**Roles:** {", ".join([r.name for r in roles_to_add])}',
-                ephemeral=True
-            )
+                
+                # Everyone gets GenUser role
+                genuser_role = discord.utils.get(guild.roles, name='GenUser')
+                if not genuser_role:
+                    genuser_role = await guild.create_role(name='GenUser', mentionable=True)
+                roles_to_add.append(genuser_role)
+                
+                # Add all roles
+                await member.add_roles(*roles_to_add)
+                
+                # Save registration data
+                registration_config['registered_members'][str(member.id)] = {
+                    'ign': ign_input,
+                    'gang_code': gang_code_input,
+                    'rank': rank_input
+                }
+                save_registration_config(registration_config)
+                
+                await interaction.response.send_message(
+                    f'\u2705 Registration complete!\n'
+                    f'**Nickname:** {new_nickname}\n'
+                    f'**Roles:** {", ".join([r.name for r in roles_to_add])}',
+                    ephemeral=True
+                )
+                
+            # R4 and R5 require leadership approval
+            elif rank_input in ['R4', 'R5']:
+                # Add GenUser role and gang role immediately
+                genuser_role = discord.utils.get(guild.roles, name='GenUser')
+                if not genuser_role:
+                    genuser_role = await guild.create_role(name='GenUser', mentionable=True)
+                roles_to_add.append(genuser_role)
+                
+                await member.add_roles(*roles_to_add)
+                
+                # Save to pending approvals
+                registration_config['pending_approvals'][str(member.id)] = {
+                    'ign': ign_input,
+                    'gang_code': gang_code_input,
+                    'rank': rank_input
+                }
+                save_registration_config(registration_config)
+                
+                # Send approval request to leadership channel
+                leadership_channel_id = registration_config.get('leadership_approval_channel_id')
+                if leadership_channel_id:
+                    leadership_channel = guild.get_channel(int(leadership_channel_id))
+                    if leadership_channel:
+                        approval_embed = discord.Embed(
+                            title='Leadership Rank Approval Request',
+                            description=f'{member.mention} has requested a leadership rank.',
+                            color=discord.Color.orange()
+                        )
+                        approval_embed.add_field(name='In Game Name', value=ign_input, inline=True)
+                        approval_embed.add_field(name='Gang Code', value=gang_code_input, inline=True)
+                        approval_embed.add_field(name='Requested Rank', value=rank_input, inline=True)
+                        approval_embed.add_field(name='Nickname', value=new_nickname, inline=False)
+                        approval_embed.set_footer(text=f'User ID: {member.id}')
+                        
+                        view = LeadershipApprovalView(str(member.id))
+                        await leadership_channel.send(embed=approval_embed, view=view)
+                
+                await interaction.response.send_message(
+                    f'\u2705 Registration submitted!\n'
+                    f'**Nickname:** {new_nickname}\n'
+                    f'**Roles:** {", ".join([r.name for r in roles_to_add])}\n\n'
+                    f'\u23f3 Your **{rank_input}** rank requires leadership approval. You will be notified once reviewed.',
+                    ephemeral=True
+                )
             
         except discord.Forbidden:
             await interaction.response.send_message(
@@ -221,6 +265,128 @@ class RegistrationView(ui.View):
     @ui.button(label='Register', style=discord.ButtonStyle.primary, custom_id='register_button')
     async def register_button(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(RegistrationModal())
+
+
+# Leadership Approval View
+class LeadershipApprovalView(ui.View):
+    def __init__(self, member_id: str):
+        super().__init__(timeout=None)
+        self.member_id = member_id
+    
+    @ui.button(label='Approve', style=discord.ButtonStyle.success, custom_id='approve_leadership')
+    async def approve_button(self, interaction: discord.Interaction, button: ui.Button):
+        # Check if user has LeadershipApproval role
+        approval_role = discord.utils.get(interaction.guild.roles, name='LeadershipApproval')
+        if not approval_role or approval_role not in interaction.user.roles:
+            await interaction.response.send_message(
+                '❌ You need the LeadershipApproval role to approve members.',
+                ephemeral=True
+            )
+            return
+        
+        # Get pending approval data
+        if self.member_id not in registration_config['pending_approvals']:
+            await interaction.response.send_message(
+                '❌ This approval request is no longer valid.',
+                ephemeral=True
+            )
+            return
+        
+        pending_data = registration_config['pending_approvals'][self.member_id]
+        member = interaction.guild.get_member(int(self.member_id))
+        
+        if not member:
+            await interaction.response.send_message(
+                '❌ Member not found in server.',
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Add the appropriate rank role
+            rank = pending_data['rank']
+            if rank == 'R4':
+                rank_role = discord.utils.get(interaction.guild.roles, name='R4')
+                if not rank_role:
+                    rank_role = await interaction.guild.create_role(name='R4', mentionable=True)
+            elif rank == 'R5':
+                rank_role = discord.utils.get(interaction.guild.roles, name='R5')
+                if not rank_role:
+                    rank_role = await interaction.guild.create_role(name='R5', mentionable=True)
+            else:
+                await interaction.response.send_message('❌ Invalid rank in approval.', ephemeral=True)
+                return
+            
+            await member.add_roles(rank_role)
+            
+            # Move to registered members
+            registration_config['registered_members'][self.member_id] = {
+                'ign': pending_data['ign'],
+                'gang_code': pending_data['gang_code'],
+                'rank': pending_data['rank']
+            }
+            
+            # Remove from pending
+            del registration_config['pending_approvals'][self.member_id]
+            save_registration_config(registration_config)
+            
+            # Update the message
+            embed = interaction.message.embeds[0]
+            embed.color = discord.Color.green()
+            embed.add_field(name='Status', value=f'✅ Approved by {interaction.user.mention}', inline=False)
+            
+            await interaction.message.edit(embed=embed, view=None)
+            await interaction.response.send_message(f'✅ {member.mention} approved for {rank}!', ephemeral=True)
+            
+            # Notify the member
+            try:
+                await member.send(f'✅ Your leadership rank ({rank}) has been approved! Welcome to the leadership team.')
+            except:
+                pass
+            
+        except Exception as e:
+            await interaction.response.send_message(f'❌ Error approving member: {str(e)}', ephemeral=True)
+    
+    @ui.button(label='Deny', style=discord.ButtonStyle.danger, custom_id='deny_leadership')
+    async def deny_button(self, interaction: discord.Interaction, button: ui.Button):
+        # Check if user has LeadershipApproval role
+        approval_role = discord.utils.get(interaction.guild.roles, name='LeadershipApproval')
+        if not approval_role or approval_role not in interaction.user.roles:
+            await interaction.response.send_message(
+                '❌ You need the LeadershipApproval role to deny members.',
+                ephemeral=True
+            )
+            return
+        
+        # Get pending approval data
+        if self.member_id not in registration_config['pending_approvals']:
+            await interaction.response.send_message(
+                '❌ This approval request is no longer valid.',
+                ephemeral=True
+            )
+            return
+        
+        pending_data = registration_config['pending_approvals'][self.member_id]
+        member = interaction.guild.get_member(int(self.member_id))
+        
+        # Remove from pending
+        del registration_config['pending_approvals'][self.member_id]
+        save_registration_config(registration_config)
+        
+        # Update the message
+        embed = interaction.message.embeds[0]
+        embed.color = discord.Color.red()
+        embed.add_field(name='Status', value=f'❌ Denied by {interaction.user.mention}', inline=False)
+        
+        await interaction.message.edit(embed=embed, view=None)
+        await interaction.response.send_message(f'❌ Leadership request denied.', ephemeral=True)
+        
+        # Notify the member
+        if member:
+            try:
+                await member.send(f'❌ Your leadership rank ({pending_data["rank"]}) request was denied. Please contact an administrator for more information.')
+            except:
+                pass
 
 
 @bot.event
@@ -277,7 +443,16 @@ async def set_holding_room(ctx):
     """Set the current channel as the holding room for new members."""
     registration_config['holding_room_channel_id'] = str(ctx.channel.id)
     save_registration_config(registration_config)
-    await ctx.send(f'✅ Holding room set to {ctx.channel.mention}. New members will receive registration messages here.')
+    await ctx.send(f'\u2705 Holding room set to {ctx.channel.mention}. New members will receive registration messages here.')
+
+
+@bot.command(name='setleadershipchannel', help='Set the leadership approval channel')
+@commands.has_permissions(administrator=True)
+async def set_leadership_channel(ctx):
+    """Set the current channel as the leadership approval channel."""
+    registration_config['leadership_approval_channel_id'] = str(ctx.channel.id)
+    save_registration_config(registration_config)
+    await ctx.send(f'\u2705 Leadership approval channel set to {ctx.channel.mention}. R4/R5 registration requests will be sent here.')
 
 
 @bot.command(name='fixnicknames', help='Update nicknames for all members based on their roles')

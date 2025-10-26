@@ -4,14 +4,31 @@ A Discord bot that automatically translates messages to different languages base
 
 ## Features
 
+### Translation Features
 - 🌍 **Multi-language support** - Supports 100+ languages via Google Translate
 - 👥 **Translation Groups** - Group multiple channels together for automatic cross-translation
 - 🚩 **Flag Reactions** - React with flag emojis to translate messages on-demand
 - 🤖 **Automatic translation** - Messages in grouped channels are automatically translated
 - 💬 **Preserved context** - Shows original author and source/target languages
-- 🔐 **Permission-based** - Only users with channel management permissions can configure settings
+
+### Member Registration System
+- 📝 **Interactive Registration** - New members register with In-Game Name, Gang Code, and Rank
+- 🏷️ **Automatic Nickname Formatting** - Sets nicknames to `[GangCode][Rank]:IGN` format
+- 👥 **Role Management** - Automatically assigns gang roles, rank roles (Pirate, R4, R5), and GenUser
+- 🔒 **Nickname Protection** - Prevents non-admins from changing their nicknames
+- ✅ **Leadership Approval** - R4 and R5 ranks require approval from LeadershipApproval role holders
+- 🚪 **Auto Role Removal** - Removes DaviesLocker role upon successful registration
+- 🔐 **Permission-based** - Admin commands for managing registration and fixing nicknames
 
 ## Commands
+
+### Registration Commands
+
+| Command | Description | Permission Required |
+|---------|-------------|-------------------|
+| `!setholdingroom` | Set current channel as the holding room for new members | Administrator |
+| `!setleadershipchannel` | Set current channel for R4/R5 approval requests | Administrator |
+| `!fixnicknames` | Update all member nicknames based on their roles | Administrator |
 
 ### Translation Groups
 
@@ -105,6 +122,18 @@ pip install -r requirements.txt
 ```bash
 python bot.py
 ```
+
+### 7. Configure Registration System (Optional)
+
+If you want to use the member registration system:
+
+1. Create a holding room channel (e.g., `#holding-room`)
+2. Create a leadership approval channel (e.g., `#leadership-approvals`)
+3. Create a `LeadershipApproval` role and assign it to users who can approve R4/R5 ranks
+4. In the holding room, run: `!setholdingroom`
+5. In the leadership approval channel, run: `!setleadershipchannel`
+
+New members will now automatically receive a registration prompt when they join!
 
 ## Usage Examples
 
