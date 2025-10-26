@@ -1,7 +1,9 @@
 import discord
 from discord.ext import commands
+from discord import ui
 import json
 import os
+import re
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
 
@@ -13,11 +15,13 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.guilds = True
 intents.reactions = True
+intents.members = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Storage for channel language mappings
 LANGUAGE_CONFIG_FILE = 'language_config.json'
+REGISTRATION_CONFIG_FILE = 'registration_config.json'
 
 # Flag emoji to language code mapping
 FLAG_TO_LANG = {
@@ -60,14 +64,163 @@ def save_language_config(config):
         json.dump(config, f, indent=4)
 
 
+def load_registration_config():
+    """Load registration configuration from JSON file."""
+    if os.path.exists(REGISTRATION_CONFIG_FILE):
+        with open(REGISTRATION_CONFIG_FILE, 'r') as f:
+            return json.load(f)
+    return {
+        'holding_room_channel_id': None,  # Channel ID where new members appear
+        'registered_members': {}  # member_id: {ign, gang_code, rank}
+    }
+
+
+def save_registration_config(config):
+    """Save registration configuration to JSON file."""
+    with open(REGISTRATION_CONFIG_FILE, 'w') as f:
+        json.dump(config, f, indent=4)
+
+
 # Load config on startup
 language_config = load_language_config()
+registration_config = load_registration_config()
 
 # Ensure structure exists
 if 'groups' not in language_config:
     language_config['groups'] = {}
 if 'flag_enabled_channels' not in language_config:
     language_config['flag_enabled_channels'] = []
+if 'holding_room_channel_id' not in registration_config:
+    registration_config['holding_room_channel_id'] = None
+if 'registered_members' not in registration_config:
+    registration_config['registered_members'] = {}
+
+
+# Registration Modal Class
+class RegistrationModal(ui.Modal, title='Server Registration'):
+    ign = ui.TextInput(
+        label='In Game Name',
+        placeholder='Enter your in-game name',
+        required=True,
+        max_length=50
+    )
+    
+    gang_code = ui.TextInput(
+        label='Gang Code (3 characters)',
+        placeholder='e.g., ABC',
+        required=True,
+        min_length=3,
+        max_length=3
+    )
+    
+    rank = ui.TextInput(
+        label='Rank (R1, R2, R3, R4, or R5)',
+        placeholder='e.g., R3',
+        required=True,
+        max_length=2
+    )
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        # Validate rank
+        rank_input = self.rank.value.upper().strip()
+        if not re.match(r'^R[1-5]$', rank_input):
+            await interaction.response.send_message(
+                '❌ Invalid rank! Please use R1, R2, R3, R4, or R5.',
+                ephemeral=True
+            )
+            return
+        
+        # Validate gang code (3 uppercase letters)
+        gang_code_input = self.gang_code.value.upper().strip()
+        if not re.match(r'^[A-Z]{3}$', gang_code_input):
+            await interaction.response.send_message(
+                '❌ Gang code must be exactly 3 letters!',
+                ephemeral=True
+            )
+            return
+        
+        ign_input = self.ign.value.strip()
+        
+        # Process registration
+        guild = interaction.guild
+        member = interaction.user
+        
+        try:
+            # Set nickname format: [GangCode][Rank]:InGameName
+            new_nickname = f"[{gang_code_input}][{rank_input}]:{ign_input}"
+            await member.edit(nick=new_nickname)
+            
+            # Get or create gang code role
+            gang_role = discord.utils.get(guild.roles, name=gang_code_input)
+            if not gang_role:
+                gang_role = await guild.create_role(name=gang_code_input, mentionable=True)
+            
+            # Determine rank roles
+            roles_to_add = [gang_role]
+            
+            # R1-R3 get Pirate role
+            if rank_input in ['R1', 'R2', 'R3']:
+                pirate_role = discord.utils.get(guild.roles, name='Pirate')
+                if not pirate_role:
+                    pirate_role = await guild.create_role(name='Pirate', mentionable=True)
+                roles_to_add.append(pirate_role)
+            # R4 gets R4 role
+            elif rank_input == 'R4':
+                r4_role = discord.utils.get(guild.roles, name='R4')
+                if not r4_role:
+                    r4_role = await guild.create_role(name='R4', mentionable=True)
+                roles_to_add.append(r4_role)
+            # R5 gets R5 role
+            elif rank_input == 'R5':
+                r5_role = discord.utils.get(guild.roles, name='R5')
+                if not r5_role:
+                    r5_role = await guild.create_role(name='R5', mentionable=True)
+                roles_to_add.append(r5_role)
+            
+            # Everyone gets GenUser role
+            genuser_role = discord.utils.get(guild.roles, name='GenUser')
+            if not genuser_role:
+                genuser_role = await guild.create_role(name='GenUser', mentionable=True)
+            roles_to_add.append(genuser_role)
+            
+            # Add all roles
+            await member.add_roles(*roles_to_add)
+            
+            # Save registration data
+            registration_config['registered_members'][str(member.id)] = {
+                'ign': ign_input,
+                'gang_code': gang_code_input,
+                'rank': rank_input
+            }
+            save_registration_config(registration_config)
+            
+            await interaction.response.send_message(
+                f'✅ Registration complete!\n'
+                f'**Nickname:** {new_nickname}\n'
+                f'**Roles:** {", ".join([r.name for r in roles_to_add])}',
+                ephemeral=True
+            )
+            
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                '❌ I don\'t have permission to set your nickname or assign roles. Please contact an admin.',
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.response.send_message(
+                f'❌ An error occurred during registration: {str(e)}',
+                ephemeral=True
+            )
+
+
+# Registration Button View
+class RegistrationView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)  # Persistent view
+    
+    @ui.button(label='Register', style=discord.ButtonStyle.primary, custom_id='register_button')
+    async def register_button(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(RegistrationModal())
 
 
 @bot.event
@@ -75,6 +228,122 @@ async def on_ready():
     """Event handler for when bot is ready."""
     print(f'{bot.user} has connected to Discord!')
     print(f'Bot is in {len(bot.guilds)} guild(s)')
+    
+    # Add persistent view for registration button
+    bot.add_view(RegistrationView())
+
+
+@bot.event
+async def on_member_join(member: discord.Member):
+    """Event handler for when a member joins the server."""
+    holding_room_id = registration_config.get('holding_room_channel_id')
+    
+    if not holding_room_id:
+        print(f'New member {member.name} joined, but holding room is not configured.')
+        return
+    
+    holding_room = member.guild.get_channel(int(holding_room_id))
+    if not holding_room:
+        print(f'Holding room channel ID {holding_room_id} not found.')
+        return
+    
+    try:
+        embed = discord.Embed(
+            title='Welcome to the Server!',
+            description=f'Hello {member.mention}! Please register to gain access to the server.',
+            color=discord.Color.green()
+        )
+        embed.add_field(
+            name='Registration',
+            value='Click the button below to register. You will be asked for:\n'
+                  '• **In Game Name**\n'
+                  '• **Gang Code** (3 characters)\n'
+                  '• **Rank** (R1-R5)',
+            inline=False
+        )
+        
+        view = RegistrationView()
+        await holding_room.send(embed=embed, view=view)
+        
+    except discord.Forbidden:
+        print(f'Cannot send message to holding room - missing permissions')
+    except Exception as e:
+        print(f'Error sending welcome message: {e}')
+
+
+@bot.command(name='setholdingroom', help='Set the holding room channel for new members')
+@commands.has_permissions(administrator=True)
+async def set_holding_room(ctx):
+    """Set the current channel as the holding room for new members."""
+    registration_config['holding_room_channel_id'] = str(ctx.channel.id)
+    save_registration_config(registration_config)
+    await ctx.send(f'✅ Holding room set to {ctx.channel.mention}. New members will receive registration messages here.')
+
+
+@bot.command(name='fixnicknames', help='Update nicknames for all members based on their roles')
+@commands.has_permissions(administrator=True)
+async def fix_nicknames(ctx):
+    """Fix nicknames for all members based on their roles."""
+    await ctx.send('⏳ Processing nicknames...')
+    
+    fixed_count = 0
+    error_count = 0
+    
+    # Roles we want to display in nicknames
+    gang_roles = []  # 3-letter gang codes
+    rank_roles = ['R4', 'R5', 'Pirate']  # Rank roles
+    
+    for member in ctx.guild.members:
+        if member.bot:
+            continue
+        
+        # Find gang code and rank from roles
+        member_gang = None
+        member_rank = None
+        
+        for role in member.roles:
+            # Check if it's a gang code (3 uppercase letters)
+            if re.match(r'^[A-Z]{3}$', role.name):
+                member_gang = role.name
+            # Check for rank roles
+            elif role.name in ['R4', 'R5']:
+                member_rank = role.name
+            elif role.name == 'Pirate':
+                # Try to determine R1-R3 from other info or default to R1
+                if not member_rank or member_rank not in ['R1', 'R2', 'R3']:
+                    member_rank = 'R1'  # Default for Pirates
+        
+        # If we found both gang and rank, update nickname
+        if member_gang and member_rank:
+            # Try to extract IGN from current nickname or use username
+            current_nick = member.nick if member.nick else member.name
+            
+            # Try to parse existing format [XXX][RX]:IGN
+            match = re.match(r'\[[A-Z]{3}\]\[R[1-5]\]:(.+)', current_nick)
+            if match:
+                ign = match.group(1)
+            else:
+                # Check if registered
+                if str(member.id) in registration_config['registered_members']:
+                    ign = registration_config['registered_members'][str(member.id)]['ign']
+                else:
+                    ign = current_nick  # Use current nickname as IGN
+            
+            new_nickname = f"[{member_gang}][{member_rank}]:{ign}"
+            
+            try:
+                if member.nick != new_nickname:
+                    await member.edit(nick=new_nickname)
+                    fixed_count += 1
+            except discord.Forbidden:
+                error_count += 1
+            except Exception as e:
+                print(f'Error updating {member.name}: {e}')
+                error_count += 1
+    
+    await ctx.send(f'✅ Nickname fix complete!\n'
+                   f'• **Updated:** {fixed_count} members\n'
+                   f'• **Errors:** {error_count} members')
 
 
 @bot.command(name='creategroup', help='Create a translation group. Usage: !creategroup <group_name>')
@@ -306,6 +575,44 @@ async def on_message(message):
             
             # Only process for one group (channel shouldn't be in multiple groups)
             break
+
+
+@bot.event
+async def on_member_update(before: discord.Member, after: discord.Member):
+    """Prevent non-admin users from changing their nicknames."""
+    # Only care about nickname changes
+    if before.nick == after.nick:
+        return
+    
+    # Allow admins to change nicknames
+    if after.guild_permissions.administrator:
+        return
+    
+    # Check if member is registered
+    member_id = str(after.id)
+    if member_id not in registration_config['registered_members']:
+        return  # Not registered, allow change
+    
+    # Get their registration data
+    reg_data = registration_config['registered_members'][member_id]
+    expected_nickname = f"[{reg_data['gang_code']}][{reg_data['rank']}]:{reg_data['ign']}"
+    
+    # If they changed their nickname, revert it
+    if after.nick != expected_nickname:
+        try:
+            await after.edit(nick=expected_nickname)
+            # Try to DM the user
+            try:
+                await after.send(
+                    '❌ You cannot change your nickname. '
+                    'Please contact an administrator if you need to update your registration.'
+                )
+            except:
+                pass  # User has DMs disabled
+        except discord.Forbidden:
+            print(f'Cannot revert nickname for {after.name} - missing permissions')
+        except Exception as e:
+            print(f'Error reverting nickname: {e}')
 
 
 @bot.event
