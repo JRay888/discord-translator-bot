@@ -233,12 +233,32 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
         is_reregistration = member_id_str in registration_config['registered_members']
         was_pending = member_id_str in registration_config['pending_approvals']
         
-        # If re-registering, remove old data first
+        # If re-registering, remove old data and roles first
         if is_reregistration:
             # Get old data for comparison
             old_data = registration_config['registered_members'][member_id_str]
-            # Check if rank changed and new rank requires approval
-            rank_changed = old_data['rank'] != rank_input
+            old_rank = old_data['rank']
+            
+            # Remove old rank roles
+            if old_rank in ['R1', 'R2', 'R3']:
+                pirate_role = discord.utils.get(guild.roles, name='Pirate')
+                if pirate_role and pirate_role in member.roles:
+                    await member.remove_roles(pirate_role)
+            elif old_rank == 'R4':
+                r4_role = discord.utils.get(guild.roles, name='R4')
+                if r4_role and r4_role in member.roles:
+                    await member.remove_roles(r4_role)
+            elif old_rank == 'R5':
+                r5_role = discord.utils.get(guild.roles, name='R5')
+                if r5_role and r5_role in member.roles:
+                    await member.remove_roles(r5_role)
+            
+            # Remove old gang role if gang code changed
+            old_gang = old_data['gang_code']
+            if old_gang != gang_code_input:
+                old_gang_role = discord.utils.get(guild.roles, name=old_gang)
+                if old_gang_role and old_gang_role in member.roles:
+                    await member.remove_roles(old_gang_role)
             
             # Remove old registration
             del registration_config['registered_members'][member_id_str]
