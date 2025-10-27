@@ -77,6 +77,7 @@ def load_registration_config():
         'member_log_channel_id': None,  # Channel for logging all registrations
         'registered_members': {},  # member_id: {ign, gang_code, rank}
         'pending_approvals': {},  # member_id: {ign, gang_code, rank, message_id}
+        'welcome_messages': {},  # member_id: {channel_id, message_id}
         'approval_required': {  # Which ranks require approval
             'R1': False,
             'R2': False,
@@ -128,6 +129,29 @@ async def send_member_log(guild, member, ign, gang_code, rank, status='Registere
     except Exception as e:
         print(f'Error sending member log: {e}')
 
+
+async def delete_welcome_message(guild, member_id):
+    """Delete the welcome message for a member after they register."""
+    member_id_str = str(member_id)
+    if member_id_str not in registration_config['welcome_messages']:
+        return
+    
+    welcome_data = registration_config['welcome_messages'][member_id_str]
+    channel = guild.get_channel(int(welcome_data['channel_id']))
+    
+    if channel:
+        try:
+            message = await channel.fetch_message(int(welcome_data['message_id']))
+            await message.delete()
+        except discord.NotFound:
+            pass  # Message already deleted
+        except Exception as e:
+            print(f'Error deleting welcome message: {e}')
+    
+    # Remove from tracking
+    del registration_config['welcome_messages'][member_id_str]
+    save_registration_config(registration_config)
+
 # Ensure structure exists
 if 'groups' not in language_config:
     language_config['groups'] = {}
@@ -143,6 +167,8 @@ if 'registered_members' not in registration_config:
     registration_config['registered_members'] = {}
 if 'pending_approvals' not in registration_config:
     registration_config['pending_approvals'] = {}
+if 'welcome_messages' not in registration_config:
+    registration_config['welcome_messages'] = {}
 if 'approval_required' not in registration_config:
     registration_config['approval_required'] = {
         'R1': False,
@@ -264,6 +290,9 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 # Send to member log
                 await send_member_log(guild, member, ign_input, gang_code_input, rank_input, 'Registered')
                 
+                # Delete welcome message
+                await delete_welcome_message(guild, member.id)
+                
                 await interaction.response.send_message(
                     f'\u2705 Registration complete!\n'
                     f'**Nickname:** {new_nickname}\n'
@@ -286,6 +315,9 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 
                 # Send to member log
                 await send_member_log(guild, member, ign_input, gang_code_input, rank_input, 'Pending Approval')
+                
+                # Delete welcome message
+                await delete_welcome_message(guild, member.id)
                 
                 # Send approval request to approval channel
                 approval_channel_id = registration_config.get('leadership_approval_channel_id')
@@ -518,7 +550,14 @@ async def on_member_join(member: discord.Member):
         )
         
         view = RegistrationView()
-        await holding_room.send(embed=embed, view=view)
+        welcome_msg = await holding_room.send(embed=embed, view=view)
+        
+        # Store the welcome message ID so we can delete it later
+        registration_config['welcome_messages'][str(member.id)] = {
+            'channel_id': str(holding_room.id),
+            'message_id': str(welcome_msg.id)
+        }
+        save_registration_config(registration_config)
         
     except discord.Forbidden:
         print(f'Cannot send message to holding room - missing permissions')
