@@ -249,14 +249,13 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
             # Determine rank roles
             roles_to_add = [gang_role]
             
-            # Everyone gets GenUser role
-            genuser_role = discord.utils.get(guild.roles, name='GenUser')
-            if not genuser_role:
-                genuser_role = await guild.create_role(name='GenUser', mentionable=True)
-            roles_to_add.append(genuser_role)
-            
-            # If no approval required, add rank role immediately
+            # If no approval required, add rank role and GenUser immediately
             if not requires_approval:
+                # Everyone gets GenUser role
+                genuser_role = discord.utils.get(guild.roles, name='GenUser')
+                if not genuser_role:
+                    genuser_role = await guild.create_role(name='GenUser', mentionable=True)
+                roles_to_add.append(genuser_role)
                 # R1-R3 get Pirate role
                 if rank_input in ['R1', 'R2', 'R3']:
                     pirate_role = discord.utils.get(guild.roles, name='Pirate')
@@ -302,7 +301,7 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 
             # If approval required, send to approval channel
             else:
-                # Add GenUser role and gang role only
+                # Only add gang role (no GenUser until approved)
                 await member.add_roles(*roles_to_add)
                 
                 # Save to pending approvals
@@ -407,28 +406,37 @@ class LeadershipApprovalView(ui.View):
         try:
             # Add the appropriate rank role
             rank = pending_data['rank']
-            rank_role = None
+            roles_to_add = []
             
             # R1-R3 get Pirate role
             if rank in ['R1', 'R2', 'R3']:
                 rank_role = discord.utils.get(interaction.guild.roles, name='Pirate')
                 if not rank_role:
                     rank_role = await interaction.guild.create_role(name='Pirate', mentionable=True)
+                roles_to_add.append(rank_role)
             # R4 gets R4 role
             elif rank == 'R4':
                 rank_role = discord.utils.get(interaction.guild.roles, name='R4')
                 if not rank_role:
                     rank_role = await interaction.guild.create_role(name='R4', mentionable=True)
+                roles_to_add.append(rank_role)
             # R5 gets R5 role
             elif rank == 'R5':
                 rank_role = discord.utils.get(interaction.guild.roles, name='R5')
                 if not rank_role:
                     rank_role = await interaction.guild.create_role(name='R5', mentionable=True)
+                roles_to_add.append(rank_role)
             else:
                 await interaction.response.send_message('\u274c Invalid rank in approval.', ephemeral=True)
                 return
             
-            await member.add_roles(rank_role)
+            # Add GenUser role upon approval
+            genuser_role = discord.utils.get(interaction.guild.roles, name='GenUser')
+            if not genuser_role:
+                genuser_role = await interaction.guild.create_role(name='GenUser', mentionable=True)
+            roles_to_add.append(genuser_role)
+            
+            await member.add_roles(*roles_to_add)
             
             # Move to registered members
             registration_config['registered_members'][self.member_id] = {

@@ -16,8 +16,10 @@ A Discord bot that automatically translates messages to different languages base
 - 🏷️ **Automatic Nickname Formatting** - Sets nicknames to `[GangCode][Rank]:IGN` format
 - 👥 **Role Management** - Automatically assigns gang roles, rank roles (Pirate, R4, R5), and GenUser
 - 🔒 **Nickname Protection** - Prevents non-admins from changing their nicknames
-- ✅ **Leadership Approval** - R4 and R5 ranks require approval from LeadershipApproval role holders
+- ✅ **Configurable Approvals** - Any rank (R1-R5) can require approval before full access
+- 📝 **Member Logging** - All registrations logged to dedicated channel with full details
 - 🚪 **Auto Role Removal** - Removes DaviesLocker role upon successful registration
+- 🧹 **Auto Cleanup** - Welcome messages deleted after registration
 - 🔐 **Permission-based** - Admin commands for managing registration and fixing nicknames
 
 ## Commands
@@ -27,7 +29,10 @@ A Discord bot that automatically translates messages to different languages base
 | Command | Description | Permission Required |
 |---------|-------------|-------------------|
 | `!setholdingroom` | Set current channel as the holding room for new members | Administrator |
-| `!setleadershipchannel` | Set current channel for R4/R5 approval requests | Administrator |
+| `!setleadershipchannel` | Set current channel for approval requests | Administrator |
+| `!setmemberlog` | Set current channel for member registration logs | Administrator |
+| `!requireapproval <rank> <on\|off>` | Toggle approval requirement for a rank (e.g., `!requireapproval R3 on`) | Administrator |
+| `!approvalstatus` | View which ranks require approval | Administrator |
 | `!fixnicknames` | Update all member nicknames based on their roles | Administrator |
 
 ### Translation Groups
@@ -127,11 +132,25 @@ python bot.py
 
 If you want to use the member registration system:
 
-1. Create a holding room channel (e.g., `#holding-room`)
-2. Create a leadership approval channel (e.g., `#leadership-approvals`)
-3. Create a `LeadershipApproval` role and assign it to users who can approve R4/R5 ranks
-4. In the holding room, run: `!setholdingroom`
-5. In the leadership approval channel, run: `!setleadershipchannel`
+#### Required Setup:
+1. Create a **holding room channel** (e.g., `#holding-room`)
+2. In the holding room, run: `!setholdingroom`
+
+#### Optional Setup:
+3. Create a **member log channel** (e.g., `#member-log`)
+   - In that channel, run: `!setmemberlog`
+   - All registrations will be logged here with full details
+
+4. Create an **approval channel** (e.g., `#leadership-approvals`)
+   - In that channel, run: `!setleadershipchannel`
+   - Create a `LeadershipApproval` role and assign it to approvers
+
+5. **Configure approval requirements** (default: R4 and R5 require approval):
+   ```
+   !approvalstatus              # Check current settings
+   !requireapproval R1 on       # Require approval for R1
+   !requireapproval R4 off      # Auto-approve R4 (no approval needed)
+   ```
 
 New members will now automatically receive a registration prompt when they join!
 
@@ -198,6 +217,95 @@ Users can now react to any message with a flag emoji (🇪🇸, 🇫🇷, 🇯�
 
 ```
 !listlangs
+```
+
+## Registration System
+
+### How It Works
+
+1. **Member Joins** → Receives welcome message in holding room with registration button
+2. **Click Register** → Modal form appears asking for:
+   - In Game Name
+   - Gang Code (3 letters)
+   - Rank (R1-R5)
+3. **Validation** → Bot validates inputs and sets nickname to `[GangCode][Rank]:IGN`
+4. **Role Assignment**:
+   - **Gang Role** - Automatically created/assigned based on 3-letter code
+   - **If Approval NOT Required**:
+     - R1-R3 → Pirate role + GenUser role
+     - R4 → R4 role + GenUser role
+     - R5 → R5 role + GenUser role
+   - **If Approval Required**:
+     - Only Gang role assigned (no GenUser or rank role yet)
+     - Approval request sent to approval channel
+     - Users with `LeadershipApproval` role can approve/deny
+     - Upon approval → Rank role + GenUser role added
+5. **Cleanup** → Welcome message automatically deleted
+6. **Logging** → All registrations logged to member log channel
+
+### Role Hierarchy
+
+- **DaviesLocker** - Removed upon registration
+- **Gang Roles** (e.g., ABC, XYZ) - Created automatically, assigned to all members of that gang
+- **Rank Roles**:
+  - **Pirate** - R1, R2, R3 ranks
+  - **R4** - R4 rank
+  - **R5** - R5 rank  
+- **GenUser** - Only assigned after registration is complete (or approved)
+
+### Managing Approvals
+
+```bash
+# View current approval settings
+!approvalstatus
+
+# Require approval for R1 rank
+!requireapproval R1 on
+
+# Turn off approval requirement for R5 (auto-approve)
+!requireapproval R5 off
+
+# Turn off all approvals (auto-approve everyone)
+!requireapproval R1 off
+!requireapproval R2 off
+!requireapproval R3 off
+!requireapproval R4 off
+!requireapproval R5 off
+```
+
+### Fixing Existing Members
+
+For members already in the server who didn't go through registration:
+
+```bash
+!fixnicknames
+```
+
+This will:
+- Scan all members
+- Read their gang code and rank from their roles
+- Update their nicknames to `[GangCode][Rank]:IGN` format
+- Try to preserve existing IGN from their current nickname
+
+### Railway Deployment
+
+If deploying to Railway:
+
+1. **Create a Volume** in your Railway service:
+   - Mount path: `/app/data`
+   - Size: 1GB
+
+2. **Why?** The bot stores configuration in JSON files:
+   - `language_config.json` - Translation settings
+   - `registration_config.json` - Registration settings, member data, approval requirements
+
+3. **Without a volume**, these files will be deleted on every deploy and you'll lose:
+   - Channel configurations
+   - Registered member data
+   - Approval settings
+   - Pending approvals
+
+The bot automatically detects `/app/data` and uses it for persistent storage!
 ```
 
 ## Common Language Codes
