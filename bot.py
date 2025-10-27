@@ -690,25 +690,14 @@ async def reregister(ctx):
         await ctx.send('❌ You need to be registered first! Please complete registration in the holding room.', delete_after=10)
         return
     
-    # Get holding room
-    holding_room_id = registration_config.get('holding_room_channel_id')
-    if not holding_room_id:
-        await ctx.send('❌ Holding room is not configured. Please contact an administrator.', delete_after=10)
-        return
-    
-    holding_room = ctx.guild.get_channel(int(holding_room_id))
-    if not holding_room:
-        await ctx.send('❌ Holding room not found. Please contact an administrator.', delete_after=10)
-        return
-    
     try:
         # Get their current info
         current_reg = registration_config['registered_members'][member_id_str]
         
-        # Send them a registration prompt in the holding room
+        # Send them a registration button right here
         embed = discord.Embed(
             title='Update Your Profile',
-            description=f'{member.mention}, click the button below to update your profile.',
+            description='Click the button below to update your profile.',
             color=discord.Color.blue()
         )
         embed.add_field(name='Current Profile', 
@@ -721,16 +710,14 @@ async def reregister(ctx):
                        inline=False)
         
         view = RegistrationView()
-        update_msg = await holding_room.send(embed=embed, view=view)
+        update_msg = await ctx.send(embed=embed, view=view)
         
-        # Store the message so we can delete it after re-registration
+        # Store the message so we can delete it after re-registration (just like new registrations)
         registration_config['welcome_messages'][member_id_str] = {
-            'channel_id': str(holding_room.id),
+            'channel_id': str(ctx.channel.id),
             'message_id': str(update_msg.id)
         }
         save_registration_config(registration_config)
-        
-        await ctx.send(f'✅ A re-registration form has been sent to {holding_room.mention}!', delete_after=10)
         
         # Delete the user's command message
         try:
