@@ -276,7 +276,11 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
             # Get or create gang code role
             gang_role = discord.utils.get(guild.roles, name=gang_code_input)
             if not gang_role:
-                gang_role = await guild.create_role(name=gang_code_input, mentionable=True)
+                gang_role = await guild.create_role(
+                    name=gang_code_input,
+                    mentionable=True,
+                    hoist=True  # Display role members separately from online members
+                )
             
             # Remove DaviesLocker role if they have it
             davies_locker_role = discord.utils.get(guild.roles, name='DaviesLocker')
