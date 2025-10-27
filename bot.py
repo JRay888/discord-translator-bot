@@ -227,6 +227,26 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
         # Process registration
         guild = interaction.guild
         member = interaction.user
+        member_id_str = str(member.id)
+        
+        # Check if already registered
+        is_reregistration = member_id_str in registration_config['registered_members']
+        was_pending = member_id_str in registration_config['pending_approvals']
+        
+        # If re-registering, remove old data first
+        if is_reregistration:
+            # Get old data for comparison
+            old_data = registration_config['registered_members'][member_id_str]
+            # Check if rank changed and new rank requires approval
+            rank_changed = old_data['rank'] != rank_input
+            
+            # Remove old registration
+            del registration_config['registered_members'][member_id_str]
+            save_registration_config(registration_config)
+        
+        if was_pending:
+            del registration_config['pending_approvals'][member_id_str]
+            save_registration_config(registration_config)
         
         try:
             # Set nickname format: [GangCode][Rank]:InGameName
@@ -659,9 +679,9 @@ async def approval_status(ctx):
     await ctx.send(embed=embed)
 
 
-@bot.command(name='requestchange', help='Request to change your In-Game Name or rank')
-async def request_change(ctx, *, request: str):
-    """Allow users to request a profile change (IGN or rank)."""
+@bot.command(name='reregister', help='Update your profile (IGN, Gang, or Rank)')
+async def reregister(ctx):
+    """Allow users to re-register to update their profile."""
     member = ctx.author
     member_id_str = str(member.id)
     
@@ -670,45 +690,56 @@ async def request_change(ctx, *, request: str):
         await ctx.send('❌ You need to be registered first! Please complete registration in the holding room.', delete_after=10)
         return
     
-    # Get their current registration
-    current_reg = registration_config['registered_members'][member_id_str]
-    
-    # Send to approval channel
-    approval_channel_id = registration_config.get('leadership_approval_channel_id')
-    if not approval_channel_id:
-        await ctx.send('❌ Profile change requests are not configured. Please contact an administrator.', delete_after=10)
+    # Get holding room
+    holding_room_id = registration_config.get('holding_room_channel_id')
+    if not holding_room_id:
+        await ctx.send('❌ Holding room is not configured. Please contact an administrator.', delete_after=10)
         return
     
-    approval_channel = ctx.guild.get_channel(int(approval_channel_id))
-    if not approval_channel:
-        await ctx.send('❌ Approval channel not found. Please contact an administrator.', delete_after=10)
+    holding_room = ctx.guild.get_channel(int(holding_room_id))
+    if not holding_room:
+        await ctx.send('❌ Holding room not found. Please contact an administrator.', delete_after=10)
         return
     
     try:
+        # Get their current info
+        current_reg = registration_config['registered_members'][member_id_str]
+        
+        # Send them a registration prompt in the holding room
         embed = discord.Embed(
-            title='Profile Change Request',
-            description=f'{member.mention} has requested a profile change.',
-            color=discord.Color.gold()
+            title='Update Your Profile',
+            description=f'{member.mention}, click the button below to update your profile.',
+            color=discord.Color.blue()
         )
-        embed.add_field(name='Current IGN', value=current_reg['ign'], inline=True)
-        embed.add_field(name='Current Gang', value=current_reg['gang_code'], inline=True)
-        embed.add_field(name='Current Rank', value=current_reg['rank'], inline=True)
-        embed.add_field(name='Current Nickname', value=member.nick if member.nick else member.name, inline=False)
-        embed.add_field(name='Requested Change', value=request, inline=False)
-        embed.set_thumbnail(url=member.avatar.url if member.avatar else None)
-        embed.set_footer(text=f'User ID: {member.id} | Use !updateprofile {member.id} to process this request')
+        embed.add_field(name='Current Profile', 
+                       value=f'**IGN:** {current_reg["ign"]}\n'
+                             f'**Gang:** {current_reg["gang_code"]}\n'
+                             f'**Rank:** {current_reg["rank"]}',
+                       inline=False)
+        embed.add_field(name='Instructions',
+                       value='Enter your NEW information in the form. This will replace your current profile.',
+                       inline=False)
         
-        await approval_channel.send(embed=embed)
-        await ctx.send('✅ Your profile change request has been submitted to the administrators.', delete_after=10)
+        view = RegistrationView()
+        update_msg = await holding_room.send(embed=embed, view=view)
         
-        # Delete the user's command message for privacy
+        # Store the message so we can delete it after re-registration
+        registration_config['welcome_messages'][member_id_str] = {
+            'channel_id': str(holding_room.id),
+            'message_id': str(update_msg.id)
+        }
+        save_registration_config(registration_config)
+        
+        await ctx.send(f'✅ A re-registration form has been sent to {holding_room.mention}!', delete_after=10)
+        
+        # Delete the user's command message
         try:
             await ctx.message.delete()
         except:
             pass
             
     except Exception as e:
-        await ctx.send(f'❌ Error submitting request: {str(e)}', delete_after=10)
+        await ctx.send(f'❌ Error: {str(e)}', delete_after=10)
 
 
 @bot.command(name='updateprofile', help='Update a member\'s profile (Admin only). Usage: !updateprofile <user_id>')
