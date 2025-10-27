@@ -71,9 +71,17 @@ def load_registration_config():
             return json.load(f)
     return {
         'holding_room_channel_id': None,  # Channel ID where new members appear
-        'leadership_approval_channel_id': None,  # Channel for R4/R5 approvals
+        'leadership_approval_channel_id': None,  # Channel for approvals
+        'member_log_channel_id': None,  # Channel for logging all registrations
         'registered_members': {},  # member_id: {ign, gang_code, rank}
-        'pending_approvals': {}  # member_id: {ign, gang_code, rank, message_id}
+        'pending_approvals': {},  # member_id: {ign, gang_code, rank, message_id}
+        'approval_required': {  # Which ranks require approval
+            'R1': False,
+            'R2': False,
+            'R3': False,
+            'R4': True,
+            'R5': True
+        }
     }
 
 
@@ -87,6 +95,37 @@ def save_registration_config(config):
 language_config = load_language_config()
 registration_config = load_registration_config()
 
+
+async def send_member_log(guild, member, ign, gang_code, rank, status='Registered'):
+    """Send registration info to member log channel."""
+    log_channel_id = registration_config.get('member_log_channel_id')
+    if not log_channel_id:
+        return
+    
+    log_channel = guild.get_channel(int(log_channel_id))
+    if not log_channel:
+        return
+    
+    try:
+        embed = discord.Embed(
+            title='Member Registration',
+            color=discord.Color.blue() if status == 'Registered' else discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.add_field(name='Member', value=member.mention, inline=True)
+        embed.add_field(name='User', value=f'{member.name}#{member.discriminator}', inline=True)
+        embed.add_field(name='Status', value=status, inline=True)
+        embed.add_field(name='In Game Name', value=ign, inline=True)
+        embed.add_field(name='Gang Code', value=gang_code, inline=True)
+        embed.add_field(name='Rank', value=rank, inline=True)
+        embed.add_field(name='Nickname', value=f'[{gang_code}][{rank}]:{ign}', inline=False)
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else None)
+        embed.set_footer(text=f'User ID: {member.id}')
+        
+        await log_channel.send(embed=embed)
+    except Exception as e:
+        print(f'Error sending member log: {e}')
+
 # Ensure structure exists
 if 'groups' not in language_config:
     language_config['groups'] = {}
@@ -96,10 +135,20 @@ if 'holding_room_channel_id' not in registration_config:
     registration_config['holding_room_channel_id'] = None
 if 'leadership_approval_channel_id' not in registration_config:
     registration_config['leadership_approval_channel_id'] = None
+if 'member_log_channel_id' not in registration_config:
+    registration_config['member_log_channel_id'] = None
 if 'registered_members' not in registration_config:
     registration_config['registered_members'] = {}
 if 'pending_approvals' not in registration_config:
     registration_config['pending_approvals'] = {}
+if 'approval_required' not in registration_config:
+    registration_config['approval_required'] = {
+        'R1': False,
+        'R2': False,
+        'R3': False,
+        'R4': True,
+        'R5': True
+    }
 
 
 # Registration Modal Class
@@ -166,21 +215,38 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
             if davies_locker_role and davies_locker_role in member.roles:
                 await member.remove_roles(davies_locker_role)
             
+            # Check if rank requires approval
+            requires_approval = registration_config['approval_required'].get(rank_input, False)
+            
             # Determine rank roles
             roles_to_add = [gang_role]
             
-            # R1-R3 get Pirate role immediately
-            if rank_input in ['R1', 'R2', 'R3']:
-                pirate_role = discord.utils.get(guild.roles, name='Pirate')
-                if not pirate_role:
-                    pirate_role = await guild.create_role(name='Pirate', mentionable=True)
-                roles_to_add.append(pirate_role)
-                
-                # Everyone gets GenUser role
-                genuser_role = discord.utils.get(guild.roles, name='GenUser')
-                if not genuser_role:
-                    genuser_role = await guild.create_role(name='GenUser', mentionable=True)
-                roles_to_add.append(genuser_role)
+            # Everyone gets GenUser role
+            genuser_role = discord.utils.get(guild.roles, name='GenUser')
+            if not genuser_role:
+                genuser_role = await guild.create_role(name='GenUser', mentionable=True)
+            roles_to_add.append(genuser_role)
+            
+            # If no approval required, add rank role immediately
+            if not requires_approval:
+                # R1-R3 get Pirate role
+                if rank_input in ['R1', 'R2', 'R3']:
+                    pirate_role = discord.utils.get(guild.roles, name='Pirate')
+                    if not pirate_role:
+                        pirate_role = await guild.create_role(name='Pirate', mentionable=True)
+                    roles_to_add.append(pirate_role)
+                # R4 gets R4 role
+                elif rank_input == 'R4':
+                    r4_role = discord.utils.get(guild.roles, name='R4')
+                    if not r4_role:
+                        r4_role = await guild.create_role(name='R4', mentionable=True)
+                    roles_to_add.append(r4_role)
+                # R5 gets R5 role
+                elif rank_input == 'R5':
+                    r5_role = discord.utils.get(guild.roles, name='R5')
+                    if not r5_role:
+                        r5_role = await guild.create_role(name='R5', mentionable=True)
+                    roles_to_add.append(r5_role)
                 
                 # Add all roles
                 await member.add_roles(*roles_to_add)
@@ -193,6 +259,9 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 }
                 save_registration_config(registration_config)
                 
+                # Send to member log
+                await send_member_log(guild, member, ign_input, gang_code_input, rank_input, 'Registered')
+                
                 await interaction.response.send_message(
                     f'\u2705 Registration complete!\n'
                     f'**Nickname:** {new_nickname}\n'
@@ -200,14 +269,9 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                     ephemeral=True
                 )
                 
-            # R4 and R5 require leadership approval
-            elif rank_input in ['R4', 'R5']:
-                # Add GenUser role and gang role immediately
-                genuser_role = discord.utils.get(guild.roles, name='GenUser')
-                if not genuser_role:
-                    genuser_role = await guild.create_role(name='GenUser', mentionable=True)
-                roles_to_add.append(genuser_role)
-                
+            # If approval required, send to approval channel
+            else:
+                # Add GenUser role and gang role only
                 await member.add_roles(*roles_to_add)
                 
                 # Save to pending approvals
@@ -218,30 +282,34 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 }
                 save_registration_config(registration_config)
                 
-                # Send approval request to leadership channel
-                leadership_channel_id = registration_config.get('leadership_approval_channel_id')
-                if leadership_channel_id:
-                    leadership_channel = guild.get_channel(int(leadership_channel_id))
-                    if leadership_channel:
+                # Send to member log
+                await send_member_log(guild, member, ign_input, gang_code_input, rank_input, 'Pending Approval')
+                
+                # Send approval request to approval channel
+                approval_channel_id = registration_config.get('leadership_approval_channel_id')
+                if approval_channel_id:
+                    approval_channel = guild.get_channel(int(approval_channel_id))
+                    if approval_channel:
                         approval_embed = discord.Embed(
-                            title='Leadership Rank Approval Request',
-                            description=f'{member.mention} has requested a leadership rank.',
+                            title='Rank Approval Request',
+                            description=f'{member.mention} has requested a rank that requires approval.',
                             color=discord.Color.orange()
                         )
                         approval_embed.add_field(name='In Game Name', value=ign_input, inline=True)
                         approval_embed.add_field(name='Gang Code', value=gang_code_input, inline=True)
                         approval_embed.add_field(name='Requested Rank', value=rank_input, inline=True)
                         approval_embed.add_field(name='Nickname', value=new_nickname, inline=False)
+                        approval_embed.set_thumbnail(url=member.avatar.url if member.avatar else None)
                         approval_embed.set_footer(text=f'User ID: {member.id}')
                         
                         view = LeadershipApprovalView(str(member.id))
-                        await leadership_channel.send(embed=approval_embed, view=view)
+                        await approval_channel.send(embed=approval_embed, view=view)
                 
                 await interaction.response.send_message(
                     f'\u2705 Registration submitted!\n'
                     f'**Nickname:** {new_nickname}\n'
                     f'**Roles:** {", ".join([r.name for r in roles_to_add])}\n\n'
-                    f'\u23f3 Your **{rank_input}** rank requires leadership approval. You will be notified once reviewed.',
+                    f'\u23f3 Your **{rank_input}** rank requires approval. You will be notified once reviewed.',
                     ephemeral=True
                 )
             
@@ -305,16 +373,25 @@ class LeadershipApprovalView(ui.View):
         try:
             # Add the appropriate rank role
             rank = pending_data['rank']
-            if rank == 'R4':
+            rank_role = None
+            
+            # R1-R3 get Pirate role
+            if rank in ['R1', 'R2', 'R3']:
+                rank_role = discord.utils.get(interaction.guild.roles, name='Pirate')
+                if not rank_role:
+                    rank_role = await interaction.guild.create_role(name='Pirate', mentionable=True)
+            # R4 gets R4 role
+            elif rank == 'R4':
                 rank_role = discord.utils.get(interaction.guild.roles, name='R4')
                 if not rank_role:
                     rank_role = await interaction.guild.create_role(name='R4', mentionable=True)
+            # R5 gets R5 role
             elif rank == 'R5':
                 rank_role = discord.utils.get(interaction.guild.roles, name='R5')
                 if not rank_role:
                     rank_role = await interaction.guild.create_role(name='R5', mentionable=True)
             else:
-                await interaction.response.send_message('❌ Invalid rank in approval.', ephemeral=True)
+                await interaction.response.send_message('\u274c Invalid rank in approval.', ephemeral=True)
                 return
             
             await member.add_roles(rank_role)
@@ -330,17 +407,27 @@ class LeadershipApprovalView(ui.View):
             del registration_config['pending_approvals'][self.member_id]
             save_registration_config(registration_config)
             
+            # Send to member log
+            await send_member_log(
+                interaction.guild,
+                member,
+                pending_data['ign'],
+                pending_data['gang_code'],
+                pending_data['rank'],
+                f'Approved by {interaction.user.name}'
+            )
+            
             # Update the message
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
-            embed.add_field(name='Status', value=f'✅ Approved by {interaction.user.mention}', inline=False)
+            embed.add_field(name='Status', value=f'\u2705 Approved by {interaction.user.mention}', inline=False)
             
             await interaction.message.edit(embed=embed, view=None)
-            await interaction.response.send_message(f'✅ {member.mention} approved for {rank}!', ephemeral=True)
+            await interaction.response.send_message(f'\u2705 {member.mention} approved for {rank}!', ephemeral=True)
             
             # Notify the member
             try:
-                await member.send(f'✅ Your leadership rank ({rank}) has been approved! Welcome to the leadership team.')
+                await member.send(f'\u2705 Your rank ({rank}) has been approved!')
             except:
                 pass
             
@@ -452,7 +539,56 @@ async def set_leadership_channel(ctx):
     """Set the current channel as the leadership approval channel."""
     registration_config['leadership_approval_channel_id'] = str(ctx.channel.id)
     save_registration_config(registration_config)
-    await ctx.send(f'\u2705 Leadership approval channel set to {ctx.channel.mention}. R4/R5 registration requests will be sent here.')
+    await ctx.send(f'\u2705 Approval channel set to {ctx.channel.mention}. Registration requests requiring approval will be sent here.')
+
+
+@bot.command(name='setmemberlog', help='Set the member log channel')
+@commands.has_permissions(administrator=True)
+async def set_member_log(ctx):
+    """Set the current channel as the member log channel."""
+    registration_config['member_log_channel_id'] = str(ctx.channel.id)
+    save_registration_config(registration_config)
+    await ctx.send(f'\u2705 Member log channel set to {ctx.channel.mention}. All registration profiles will be logged here.')
+
+
+@bot.command(name='requireapproval', help='Set which ranks require approval. Usage: !requireapproval <rank> <on|off>')
+@commands.has_permissions(administrator=True)
+async def require_approval(ctx, rank: str, setting: str):
+    """Toggle approval requirement for a specific rank."""
+    rank_upper = rank.upper()
+    setting_lower = setting.lower()
+    
+    if rank_upper not in ['R1', 'R2', 'R3', 'R4', 'R5']:
+        await ctx.send('\u274c Invalid rank! Use R1, R2, R3, R4, or R5.')
+        return
+    
+    if setting_lower not in ['on', 'off']:
+        await ctx.send('\u274c Invalid setting! Use "on" or "off".')
+        return
+    
+    registration_config['approval_required'][rank_upper] = (setting_lower == 'on')
+    save_registration_config(registration_config)
+    
+    status = 'enabled' if setting_lower == 'on' else 'disabled'
+    await ctx.send(f'\u2705 Approval requirement for **{rank_upper}** has been **{status}**.')
+
+
+@bot.command(name='approvalstatus', help='View current approval requirements for all ranks')
+@commands.has_permissions(administrator=True)
+async def approval_status(ctx):
+    """Display current approval requirements."""
+    embed = discord.Embed(
+        title='Approval Requirements',
+        description='Shows which ranks require approval before full registration',
+        color=discord.Color.blue()
+    )
+    
+    for rank in ['R1', 'R2', 'R3', 'R4', 'R5']:
+        required = registration_config['approval_required'].get(rank, False)
+        status = '\u2705 Required' if required else '\u274c Not Required'
+        embed.add_field(name=rank, value=status, inline=True)
+    
+    await ctx.send(embed=embed)
 
 
 @bot.command(name='fixnicknames', help='Update nicknames for all members based on their roles')
