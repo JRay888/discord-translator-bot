@@ -529,6 +529,25 @@ async def on_ready():
 
 
 @bot.event
+async def on_member_remove(member: discord.Member):
+    """Event handler for when a member leaves the server."""
+    member_id_str = str(member.id)
+    
+    # Clean up registration data
+    if member_id_str in registration_config['registered_members']:
+        del registration_config['registered_members'][member_id_str]
+    
+    if member_id_str in registration_config['pending_approvals']:
+        del registration_config['pending_approvals'][member_id_str]
+    
+    if member_id_str in registration_config['welcome_messages']:
+        del registration_config['welcome_messages'][member_id_str]
+    
+    save_registration_config(registration_config)
+    print(f'Cleaned up registration data for {member.name} (left server)')
+
+
+@bot.event
 async def on_member_join(member: discord.Member):
     """Event handler for when a member joins the server."""
     holding_room_id = registration_config.get('holding_room_channel_id')
@@ -638,6 +657,84 @@ async def approval_status(ctx):
         embed.add_field(name=rank, value=status, inline=True)
     
     await ctx.send(embed=embed)
+
+
+@bot.command(name='requestchange', help='Request to change your In-Game Name or rank')
+async def request_change(ctx, *, request: str):
+    """Allow users to request a profile change (IGN or rank)."""
+    member = ctx.author
+    member_id_str = str(member.id)
+    
+    # Check if they're registered
+    if member_id_str not in registration_config['registered_members']:
+        await ctx.send('❌ You need to be registered first! Please complete registration in the holding room.', delete_after=10)
+        return
+    
+    # Get their current registration
+    current_reg = registration_config['registered_members'][member_id_str]
+    
+    # Send to approval channel
+    approval_channel_id = registration_config.get('leadership_approval_channel_id')
+    if not approval_channel_id:
+        await ctx.send('❌ Profile change requests are not configured. Please contact an administrator.', delete_after=10)
+        return
+    
+    approval_channel = ctx.guild.get_channel(int(approval_channel_id))
+    if not approval_channel:
+        await ctx.send('❌ Approval channel not found. Please contact an administrator.', delete_after=10)
+        return
+    
+    try:
+        embed = discord.Embed(
+            title='Profile Change Request',
+            description=f'{member.mention} has requested a profile change.',
+            color=discord.Color.gold()
+        )
+        embed.add_field(name='Current IGN', value=current_reg['ign'], inline=True)
+        embed.add_field(name='Current Gang', value=current_reg['gang_code'], inline=True)
+        embed.add_field(name='Current Rank', value=current_reg['rank'], inline=True)
+        embed.add_field(name='Current Nickname', value=member.nick if member.nick else member.name, inline=False)
+        embed.add_field(name='Requested Change', value=request, inline=False)
+        embed.set_thumbnail(url=member.avatar.url if member.avatar else None)
+        embed.set_footer(text=f'User ID: {member.id} | Use !updateprofile {member.id} to process this request')
+        
+        await approval_channel.send(embed=embed)
+        await ctx.send('✅ Your profile change request has been submitted to the administrators.', delete_after=10)
+        
+        # Delete the user's command message for privacy
+        try:
+            await ctx.message.delete()
+        except:
+            pass
+            
+    except Exception as e:
+        await ctx.send(f'❌ Error submitting request: {str(e)}', delete_after=10)
+
+
+@bot.command(name='updateprofile', help='Update a member\'s profile (Admin only). Usage: !updateprofile <user_id>')
+@commands.has_permissions(administrator=True)
+async def update_profile(ctx, member: discord.Member):
+    """Allow admins to manually trigger re-registration for a member."""
+    member_id_str = str(member.id)
+    
+    # Check if registered
+    if member_id_str not in registration_config['registered_members']:
+        await ctx.send(f'❌ {member.mention} is not registered yet.')
+        return
+    
+    # Clear their current registration so they can re-register
+    del registration_config['registered_members'][member_id_str]
+    save_registration_config(registration_config)
+    
+    # Send them a DM with re-registration instructions
+    try:
+        await member.send(
+            '🔄 Your profile has been reset by an administrator.\n'
+            'Please return to the holding room to re-register with your updated information.'
+        )
+        await ctx.send(f'✅ {member.mention}\'s registration has been cleared. They can now re-register.')
+    except discord.Forbidden:
+        await ctx.send(f'✅ {member.mention}\'s registration has been cleared, but I couldn\'t DM them. Please let them know to re-register.')
 
 
 @bot.command(name='fixnicknames', help='Update nicknames for all members based on their roles')
