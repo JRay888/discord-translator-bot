@@ -273,8 +273,13 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
             new_nickname = f"[{gang_code_input}][{rank_input}]:{ign_input}"
             await member.edit(nick=new_nickname)
             
-            # Get or create gang code role
-            gang_role = discord.utils.get(guild.roles, name=gang_code_input)
+            # Get or create gang code role (case-insensitive search to prevent duplicates)
+            gang_role = None
+            for role in guild.roles:
+                if role.name.upper() == gang_code_input:
+                    gang_role = role
+                    break
+            
             if not gang_role:
                 gang_role = await guild.create_role(
                     name=gang_code_input,
