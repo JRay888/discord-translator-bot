@@ -20,8 +20,10 @@ intents.members = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # Storage for channel language mappings
-LANGUAGE_CONFIG_FILE = 'language_config.json'
-REGISTRATION_CONFIG_FILE = 'registration_config.json'
+# Use /app/data for Railway persistent volume, fallback to current dir for local dev
+DATA_DIR = '/app/data' if os.path.exists('/app/data') else os.path.dirname(__file__)
+LANGUAGE_CONFIG_FILE = os.path.join(DATA_DIR, 'language_config.json')
+REGISTRATION_CONFIG_FILE = os.path.join(DATA_DIR, 'registration_config.json')
 
 # Flag emoji to language code mapping
 FLAG_TO_LANG = {
