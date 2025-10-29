@@ -75,6 +75,8 @@ def load_registration_config():
         'holding_room_channel_id': None,  # Channel ID where new members appear
         'leadership_approval_channel_id': None,  # Channel for approvals
         'member_log_channel_id': None,  # Channel for logging all registrations
+        'roles_channel_id': None,  # Channel for role selection (all members)
+        'leadership_roles_channel_id': None,  # Channel for R4/R5 role selection
         'registered_members': {},  # member_id: {ign, gang_code, rank}
         'pending_approvals': {},  # member_id: {ign, gang_code, rank, message_id}
         'welcome_messages': {},  # member_id: {channel_id, message_id}
@@ -152,6 +154,56 @@ async def delete_welcome_message(guild, member_id):
     del registration_config['welcome_messages'][member_id_str]
     save_registration_config(registration_config)
 
+
+async def send_role_channel_redirects(guild, member, rank):
+    """Send member to appropriate role channels after registration/approval."""
+    roles_channel_id = registration_config.get('roles_channel_id')
+    leadership_roles_channel_id = registration_config.get('leadership_roles_channel_id')
+    
+    # Send DM
+    try:
+        dm_message = '✅ Registration complete! Please visit the following channels to complete your setup:\n'
+        
+        if roles_channel_id:
+            roles_channel = guild.get_channel(int(roles_channel_id))
+            if roles_channel:
+                dm_message += f'• {roles_channel.mention} - Select your language and preferences\n'
+        
+        if rank in ['R4', 'R5'] and leadership_roles_channel_id:
+            leadership_channel = guild.get_channel(int(leadership_roles_channel_id))
+            if leadership_channel:
+                dm_message += f'• {leadership_channel.mention} - Select your leadership roles\n'
+        
+        await member.send(dm_message)
+    except discord.Forbidden:
+        print(f'Cannot send DM to {member.name}')
+    except Exception as e:
+        print(f'Error sending DM: {e}')
+    
+    # Send mention in #roles channel (auto-delete after 5 minutes)
+    if roles_channel_id:
+        roles_channel = guild.get_channel(int(roles_channel_id))
+        if roles_channel:
+            try:
+                await roles_channel.send(
+                    f'{member.mention} Welcome! Please select your roles.',
+                    delete_after=300  # 5 minutes
+                )
+            except Exception as e:
+                print(f'Error sending roles channel message: {e}')
+    
+    # Send mention in #r5r4-roles channel if R4/R5 (auto-delete after 5 minutes)
+    if rank in ['R4', 'R5'] and leadership_roles_channel_id:
+        leadership_channel = guild.get_channel(int(leadership_roles_channel_id))
+        if leadership_channel:
+            try:
+                await leadership_channel.send(
+                    f'{member.mention} Welcome to leadership! Please select your leadership roles.',
+                    delete_after=300  # 5 minutes
+                )
+            except Exception as e:
+                print(f'Error sending leadership roles channel message: {e}')
+
 # Ensure structure exists
 if 'groups' not in language_config:
     language_config['groups'] = {}
@@ -163,6 +215,10 @@ if 'leadership_approval_channel_id' not in registration_config:
     registration_config['leadership_approval_channel_id'] = None
 if 'member_log_channel_id' not in registration_config:
     registration_config['member_log_channel_id'] = None
+if 'roles_channel_id' not in registration_config:
+    registration_config['roles_channel_id'] = None
+if 'leadership_roles_channel_id' not in registration_config:
+    registration_config['leadership_roles_channel_id'] = None
 if 'registered_members' not in registration_config:
     registration_config['registered_members'] = {}
 if 'pending_approvals' not in registration_config:
@@ -338,13 +394,18 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 # Send to member log
                 await send_member_log(guild, member, ign_input, gang_code_input, rank_input, 'Registered')
                 
-                # Delete welcome message
-                await delete_welcome_message(guild, member.id)
+                # Delete welcome message (only if it exists)
+                if member_id_str in registration_config['welcome_messages']:
+                    await delete_welcome_message(guild, member.id)
+                
+                # Send role channel redirects
+                await send_role_channel_redirects(guild, member, rank_input)
                 
                 await interaction.response.send_message(
                     f'\u2705 Registration complete!\n'
                     f'**Nickname:** {new_nickname}\n'
-                    f'**Roles:** {", ".join([r.name for r in roles_to_add])}',
+                    f'**Roles:** {", ".join([r.name for r in roles_to_add])}\n'
+                    f'Check your DMs for next steps!',
                     ephemeral=True
                 )
                 
@@ -364,8 +425,9 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 # Send to member log
                 await send_member_log(guild, member, ign_input, gang_code_input, rank_input, 'Pending Approval')
                 
-                # Delete welcome message
-                await delete_welcome_message(guild, member.id)
+                # Delete welcome message (only if it exists)
+                if member_id_str in registration_config['welcome_messages']:
+                    await delete_welcome_message(guild, member.id)
                 
                 # Send approval request to approval channel
                 approval_channel_id = registration_config.get('leadership_approval_channel_id')
@@ -508,6 +570,9 @@ class LeadershipApprovalView(ui.View):
                 f'Approved by {interaction.user.name}'
             )
             
+            # Send role channel redirects
+            await send_role_channel_redirects(interaction.guild, member, rank)
+            
             # Update the message
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
@@ -515,12 +580,6 @@ class LeadershipApprovalView(ui.View):
             
             await interaction.message.edit(embed=embed, view=None)
             await interaction.response.send_message(f'\u2705 {member.mention} approved for {rank}!', ephemeral=True)
-            
-            # Notify the member
-            try:
-                await member.send(f'\u2705 Your rank ({rank}) has been approved!')
-            except:
-                pass
             
         except Exception as e:
             await interaction.response.send_message(f'❌ Error approving member: {str(e)}', ephemeral=True)
@@ -666,6 +725,24 @@ async def set_member_log(ctx):
     registration_config['member_log_channel_id'] = str(ctx.channel.id)
     save_registration_config(registration_config)
     await ctx.send(f'\u2705 Member log channel set to {ctx.channel.mention}. All registration profiles will be logged here.')
+
+
+@bot.command(name='setroleschannel', help='Set the general roles channel (for all members)')
+@commands.has_permissions(administrator=True)
+async def set_roles_channel(ctx):
+    """Set the current channel as the general roles channel."""
+    registration_config['roles_channel_id'] = str(ctx.channel.id)
+    save_registration_config(registration_config)
+    await ctx.send(f'\u2705 General roles channel set to {ctx.channel.mention}. All registered members will be directed here.')
+
+
+@bot.command(name='setleadershiproleschannel', help='Set the leadership roles channel (for R4/R5 only)')
+@commands.has_permissions(administrator=True)
+async def set_leadership_roles_channel(ctx):
+    """Set the current channel as the leadership roles channel."""
+    registration_config['leadership_roles_channel_id'] = str(ctx.channel.id)
+    save_registration_config(registration_config)
+    await ctx.send(f'\u2705 Leadership roles channel set to {ctx.channel.mention}. R4/R5 members will be directed here.')
 
 
 @bot.command(name='requireapproval', help='Set which ranks require approval. Usage: !requireapproval <rank> <on|off>')
