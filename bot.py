@@ -1221,8 +1221,10 @@ async def on_reaction_add(reaction, user):
     
     try:
         # Translate the message
+        print(f'Attempting translation to {target_lang} for emoji {emoji}')
         translator = GoogleTranslator(source='auto', target=target_lang)
         translated_text = translator.translate(reaction.message.content)
+        print(f'Translation successful: {translated_text[:50]}...')
         
         # Create embed with translation
         embed = discord.Embed(
@@ -1239,9 +1241,9 @@ async def on_reaction_add(reaction, user):
         await reaction.message.reply(embed=embed, mention_author=False)
         
     except Exception as e:
-        print(f'Flag translation error: {e}')
+        print(f'Flag translation error for {target_lang} ({emoji}): {type(e).__name__}: {str(e)}')
         try:
-            await reaction.message.channel.send(f'❌ Translation failed: {str(e)}', delete_after=5)
+            await reaction.message.channel.send(f'❌ Translation to {target_lang.upper()} failed: {str(e)}', delete_after=10)
         except:
             pass
 
