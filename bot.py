@@ -37,7 +37,12 @@ FLAG_TO_LANG = {
     '🇯🇵': 'ja',  # Japanese
     '🇰🇷': 'ko',  # Korean
     '🇨🇳': 'zh-CN',  # Chinese (Simplified)
-    '🇸🇦': 'ar',  # Arabic
+    '🇸🇦': 'ar',  # Arabic (Saudi Arabia)
+    '🇪🇬': 'ar',  # Arabic (Egypt)
+    '🇦🇪': 'ar',  # Arabic (UAE)
+    '🇯🇴': 'ar',  # Arabic (Jordan)
+    '🇮🇶': 'ar',  # Arabic (Iraq)
+    '🇱🇧': 'ar',  # Arabic (Lebanon)
     '🇮🇳': 'hi',  # Hindi
     '🇳🇱': 'nl',  # Dutch
     '🇵🇱': 'pl',  # Polish
