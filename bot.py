@@ -1203,15 +1203,22 @@ async def on_reaction_add(reaction, user):
     if user.bot:
         return
     
+    # Debug: Log all reactions
+    emoji = str(reaction.emoji)
+    print(f'Reaction detected: {emoji} by {user.name} in channel {reaction.message.channel.id}')
+    
     # Check if channel has flag reactions enabled
     channel_id = str(reaction.message.channel.id)
     if channel_id not in language_config['flag_enabled_channels']:
+        print(f'Channel {channel_id} not in flag_enabled_channels: {language_config["flag_enabled_channels"]}')
         return
     
     # Check if reaction is a flag emoji
-    emoji = str(reaction.emoji)
     if emoji not in FLAG_TO_LANG:
+        print(f'Emoji {emoji} not in FLAG_TO_LANG mapping')
         return
+    
+    print(f'Flag reaction matched: {emoji} -> {FLAG_TO_LANG[emoji]}')
     
     target_lang = FLAG_TO_LANG[emoji]
     
