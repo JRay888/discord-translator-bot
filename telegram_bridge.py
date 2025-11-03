@@ -48,9 +48,11 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         return
     
     chat_id = str(update.effective_chat.id)
+    print(f'[Telegram] Message from chat {chat_id}')
     
     # Check if this Telegram group is bridged
     if chat_id not in bridge_config['bridges']:
+        print(f'[Telegram] Chat {chat_id} not bridged, ignoring')
         return
     
     bridge_info = bridge_config['bridges'][chat_id]
@@ -146,14 +148,19 @@ async def start_telegram_bot(discord_bot_instance):
     telegram_app.add_handler(CommandHandler('chatid', telegram_get_chat_id))
     
     # Start polling in the background
-    await telegram_app.initialize()
-    await telegram_app.start()
-    await telegram_app.updater.start_polling()
-    
-    print('✅ Telegram bridge started successfully')
-    print(f'ℹ️ Telegram bot username: @{telegram_app.bot.username}')
-    print(f'ℹ️ Listening for messages and /chatid commands...')
-    return telegram_app
+    try:
+        await telegram_app.initialize()
+        await telegram_app.start()
+        await telegram_app.updater.start_polling(drop_pending_updates=True)
+        
+        print('✅ Telegram bridge started successfully')
+        print(f'ℹ️ Telegram bot username: @{telegram_app.bot.username}')
+        print(f'ℹ️ Listening for messages and /chatid commands...')
+        print(f'ℹ️ Polling active: {telegram_app.updater.running}')
+        return telegram_app
+    except Exception as e:
+        print(f'❌ Error starting Telegram polling: {e}')
+        raise
 
 
 async def stop_telegram_bot():
