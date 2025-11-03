@@ -6,6 +6,7 @@ import os
 import re
 from deep_translator import GoogleTranslator
 from dotenv import load_dotenv
+import telegram_bridge
 
 # Load environment variables
 load_dotenv()
@@ -1164,6 +1165,28 @@ async def on_message(message):
 
 
 @bot.event
+async def on_message(message):
+    """Handle messages in Discord and forward to Telegram if bridged."""
+    # Ignore bot messages to prevent loops
+    if message.author.bot:
+        await bot.process_commands(message)
+        return
+    
+    # Check if this channel is bridged to Telegram
+    channel_id = str(message.channel.id)
+    
+    for tg_group_id, bridge_info in telegram_bridge.bridge_config['bridges'].items():
+        if bridge_info['discord_channel_id'] == channel_id:
+            # Forward to Telegram
+            username = message.author.display_name
+            await telegram_bridge.send_to_telegram(tg_group_id, username, message.content)
+            break
+    
+    # Process commands
+    await bot.process_commands(message)
+
+
+@bot.event
 async def on_member_update(before: discord.Member, after: discord.Member):
     """Prevent non-admin users from changing their nicknames."""
     # Only care about nickname changes
@@ -1260,6 +1283,93 @@ async def on_reaction_add(reaction, user):
             pass
 
 
+@bot.command(name='linktelegram')
+@commands.has_permissions(administrator=True)
+async def link_telegram(ctx, telegram_group_id: str, discord_channel_id: str, language: str):
+    """Link a Telegram group to a Discord channel for bidirectional messaging.
+    
+    Args:
+        telegram_group_id: The Telegram group ID (get with /chatid in Telegram)
+        discord_channel_id: The Discord channel ID to link
+        language: Language code (e.g., es, fr, ar)
+    
+    Example: !linktelegram -1001234567890 1234567890123456789 es
+    """
+    # Verify Discord channel exists
+    discord_channel = bot.get_channel(int(discord_channel_id))
+    if not discord_channel:
+        await ctx.send(f'❌ Discord channel {discord_channel_id} not found.')
+        return
+    
+    # Add to bridge config
+    telegram_bridge.bridge_config['bridges'][telegram_group_id] = {
+        'discord_channel_id': discord_channel_id,
+        'language': language
+    }
+    telegram_bridge.save_bridge_config(telegram_bridge.bridge_config)
+    
+    await ctx.send(
+        f'✅ **Telegram Bridge Linked!**\n'
+        f'Telegram Group: `{telegram_group_id}`\n'
+        f'Discord Channel: {discord_channel.mention}\n'
+        f'Language: `{language}`\n\n'
+        f'Messages will now be forwarded bidirectionally between these channels.'
+    )
+
+
+@bot.command(name='unlinktelegram')
+@commands.has_permissions(administrator=True)
+async def unlink_telegram(ctx, telegram_group_id: str):
+    """Unlink a Telegram group from Discord.
+    
+    Args:
+        telegram_group_id: The Telegram group ID to unlink
+    
+    Example: !unlinktelegram -1001234567890
+    """
+    if telegram_group_id not in telegram_bridge.bridge_config['bridges']:
+        await ctx.send(f'❌ Telegram group `{telegram_group_id}` is not linked.')
+        return
+    
+    bridge_info = telegram_bridge.bridge_config['bridges'][telegram_group_id]
+    discord_channel = bot.get_channel(int(bridge_info['discord_channel_id']))
+    
+    del telegram_bridge.bridge_config['bridges'][telegram_group_id]
+    telegram_bridge.save_bridge_config(telegram_bridge.bridge_config)
+    
+    await ctx.send(
+        f'✅ **Telegram Bridge Unlinked!**\n'
+        f'Telegram Group: `{telegram_group_id}`\n'
+        f'Discord Channel: {discord_channel.mention if discord_channel else "Unknown"}'
+    )
+
+
+@bot.command(name='listbridges')
+@commands.has_permissions(administrator=True)
+async def list_bridges(ctx):
+    """List all active Telegram-Discord bridges."""
+    if not telegram_bridge.bridge_config['bridges']:
+        await ctx.send('📋 No Telegram bridges are currently active.')
+        return
+    
+    embed = discord.Embed(
+        title='🌉 Active Telegram Bridges',
+        color=discord.Color.blue()
+    )
+    
+    for tg_group_id, bridge_info in telegram_bridge.bridge_config['bridges'].items():
+        discord_channel = bot.get_channel(int(bridge_info['discord_channel_id']))
+        channel_name = discord_channel.mention if discord_channel else 'Channel not found'
+        
+        embed.add_field(
+            name=f'Telegram Group {tg_group_id}',
+            value=f'Discord: {channel_name}\nLanguage: `{bridge_info["language"]}`',
+            inline=False
+        )
+    
+    await ctx.send(embed=embed)
+
+
 @bot.event
 async def on_command_error(ctx, error):
     """Handle command errors."""
@@ -1271,6 +1381,18 @@ async def on_command_error(ctx, error):
         print(f'Error: {error}')
 
 
+@bot.event
+async def on_ready():
+    """Called when bot is ready."""
+    print(f'Logged in as {bot.user}')
+    
+    # Start Telegram bridge
+    try:
+        await telegram_bridge.start_telegram_bot(bot)
+    except Exception as e:
+        print(f'Failed to start Telegram bridge: {e}')
+
+
 # Run the bot
 if __name__ == '__main__':
     TOKEN = os.getenv('DISCORD_BOT_TOKEN')
@@ -1279,4 +1401,12 @@ if __name__ == '__main__':
         print('ERROR: DISCORD_BOT_TOKEN not found in environment variables!')
         print('Please create a .env file with your bot token.')
     else:
-        bot.run(TOKEN)
+        try:
+            bot.run(TOKEN)
+        finally:
+            # Cleanup Telegram bridge on shutdown
+            import asyncio
+            try:
+                asyncio.get_event_loop().run_until_complete(telegram_bridge.stop_telegram_bot())
+            except:
+                pass
