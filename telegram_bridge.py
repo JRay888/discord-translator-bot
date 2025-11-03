@@ -143,6 +143,10 @@ async def start_telegram_bot(discord_bot_instance):
     # Create Telegram application
     telegram_app = Application.builder().token(token).build()
     
+    # Delete any existing webhook (webhooks block polling)
+    await telegram_app.bot.delete_webhook(drop_pending_updates=True)
+    print('🔧 Cleared any existing webhooks')
+    
     # Add handlers
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_message_handler))
     telegram_app.add_handler(CommandHandler('chatid', telegram_get_chat_id))
