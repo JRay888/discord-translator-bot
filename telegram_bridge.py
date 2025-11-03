@@ -118,10 +118,13 @@ async def start_telegram_bot(discord_bot_instance):
     """Start the Telegram bot."""
     global telegram_app, discord_bot
     
+    # Try to get token from environment, fallback to hardcoded for Railway testing
     token = os.getenv('TELEGRAM_BOT_TOKEN')
-    print(f'DEBUG: Checking for TELEGRAM_BOT_TOKEN...')
-    print(f'DEBUG: Token value: {"Found (" + token[:10] + "...)" if token else "NOT FOUND"}')
-    print(f'DEBUG: All env vars with TELEGRAM: {[k for k in os.environ.keys() if "TELEGRAM" in k]}')
+    
+    # TEMPORARY: Hardcode for testing Railway deployment
+    if not token:
+        token = '8559377449:AAGr-1RJdmmrOpQn9H_yHiudDhHwKmy5y-rs'
+        print('⚠️  Using hardcoded token (REMOVE THIS IN PRODUCTION!)')
     
     if not token:
         print('⚠️  TELEGRAM_BOT_TOKEN not found - Telegram bridge disabled')
