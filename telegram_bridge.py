@@ -119,6 +119,10 @@ async def start_telegram_bot(discord_bot_instance):
     global telegram_app, discord_bot
     
     token = os.getenv('TELEGRAM_BOT_TOKEN')
+    print(f'DEBUG: Checking for TELEGRAM_BOT_TOKEN...')
+    print(f'DEBUG: Token value: {"Found (" + token[:10] + "...)" if token else "NOT FOUND"}')
+    print(f'DEBUG: All env vars with TELEGRAM: {[k for k in os.environ.keys() if "TELEGRAM" in k]}')
+    
     if not token:
         print('⚠️  TELEGRAM_BOT_TOKEN not found - Telegram bridge disabled')
         return None
