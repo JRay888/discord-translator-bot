@@ -1104,7 +1104,7 @@ async def list_languages(ctx):
 
 @bot.event
 async def on_message(message):
-    """Handle incoming messages and cross-post translations to group channels."""
+    """Handle incoming messages for translations and Telegram bridge."""
     # Ignore bot's own messages
     if message.author.bot:
         return
@@ -1116,10 +1116,18 @@ async def on_message(message):
     if message.content.startswith(bot.command_prefix):
         return
     
-    # Check if the message is from a channel in a translation group
     source_channel_id = str(message.channel.id)
     
-    # Find which group this channel belongs to
+    # 1. Check if this channel is bridged to Telegram (if bridge is available)
+    if telegram_bridge.bridge_config and telegram_bridge.bridge_config.get('bridges'):
+        for tg_group_id, bridge_info in telegram_bridge.bridge_config['bridges'].items():
+            if bridge_info['discord_channel_id'] == source_channel_id:
+                # Forward to Telegram
+                username = message.author.display_name
+                await telegram_bridge.send_to_telegram(tg_group_id, username, message.content)
+                break
+    
+    # 2. Check if the message is from a channel in a translation group
     for group_name, channels in language_config['groups'].items():
         if source_channel_id in channels:
             source_lang = channels[source_channel_id]
@@ -1162,28 +1170,6 @@ async def on_message(message):
             
             # Only process for one group (channel shouldn't be in multiple groups)
             break
-
-
-@bot.event
-async def on_message(message):
-    """Handle messages in Discord and forward to Telegram if bridged."""
-    # Ignore bot messages to prevent loops
-    if message.author.bot:
-        await bot.process_commands(message)
-        return
-    
-    # Check if this channel is bridged to Telegram
-    channel_id = str(message.channel.id)
-    
-    for tg_group_id, bridge_info in telegram_bridge.bridge_config['bridges'].items():
-        if bridge_info['discord_channel_id'] == channel_id:
-            # Forward to Telegram
-            username = message.author.display_name
-            await telegram_bridge.send_to_telegram(tg_group_id, username, message.content)
-            break
-    
-    # Process commands
-    await bot.process_commands(message)
 
 
 @bot.event
@@ -1386,11 +1372,11 @@ async def on_ready():
     """Called when bot is ready."""
     print(f'Logged in as {bot.user}')
     
-    # Start Telegram bridge
+    # Start Telegram bridge (optional - fails gracefully if token not set)
     try:
         await telegram_bridge.start_telegram_bot(bot)
     except Exception as e:
-        print(f'Failed to start Telegram bridge: {e}')
+        print(f'Telegram bridge not started: {e}')
 
 
 # Run the bot
