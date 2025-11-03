@@ -155,7 +155,15 @@ async def start_telegram_bot(discord_bot_instance):
     try:
         await telegram_app.initialize()
         await telegram_app.start()
-        await telegram_app.updater.start_polling(drop_pending_updates=True)
+        
+        # Start polling without blocking
+        asyncio.create_task(telegram_app.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        ))
+        
+        # Give it a moment to start
+        await asyncio.sleep(1)
         
         print('✅ Telegram bridge started successfully')
         print(f'ℹ️ Telegram bot username: @{telegram_app.bot.username}')
@@ -164,6 +172,8 @@ async def start_telegram_bot(discord_bot_instance):
         return telegram_app
     except Exception as e:
         print(f'❌ Error starting Telegram polling: {e}')
+        import traceback
+        traceback.print_exc()
         raise
 
 
