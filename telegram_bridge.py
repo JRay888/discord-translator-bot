@@ -42,6 +42,8 @@ bridge_config = load_bridge_config()
 
 async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle messages from Telegram and forward to Discord."""
+    print(f'[Telegram] Received message: {update.message.text if update.message else "No message"}')
+    
     if not update.message or not update.message.text:
         return
     
@@ -80,8 +82,12 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
 
 async def telegram_get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to get the current Telegram group ID."""
+    print(f'[Telegram] /chatid command received from {update.effective_user.first_name}')
+    
     chat_id = update.effective_chat.id
     chat_title = update.effective_chat.title or "Private Chat"
+    
+    print(f'[Telegram] Chat ID: {chat_id}, Title: {chat_title}')
     
     await update.message.reply_text(
         f'📋 **Chat Info:**\n'
@@ -144,7 +150,9 @@ async def start_telegram_bot(discord_bot_instance):
     await telegram_app.start()
     await telegram_app.updater.start_polling()
     
-    print('✅ Telegram bridge started')
+    print('✅ Telegram bridge started successfully')
+    print(f'ℹ️ Telegram bot username: @{telegram_app.bot.username}')
+    print(f'ℹ️ Listening for messages and /chatid commands...')
     return telegram_app
 
 
