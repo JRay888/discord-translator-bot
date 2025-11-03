@@ -123,7 +123,7 @@ async def start_telegram_bot(discord_bot_instance):
     
     # TEMPORARY: Hardcode for testing Railway deployment
     if not token:
-        token = '8559377449:AAGr-1RJdmmrOpQn9H_yHiudDhHwKmy5y-rs'
+        token = '8482820935:AAGTJ3IH6fcfoGgTI6lG7RlcgdtFboAqETA'
         print('⚠️  Using hardcoded token (REMOVE THIS IN PRODUCTION!)')
     
     if not token:
