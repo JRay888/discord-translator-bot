@@ -1204,8 +1204,15 @@ async def on_message(message):
                         for tg_group_id, bridge_info in telegram_bridge.bridge_config['bridges'].items():
                             if bridge_info['discord_channel_id'] == target_channel_id:
                                 # Forward the translated text to Telegram
-                                await telegram_bridge.send_to_telegram(tg_group_id, author_name, translated_text)
-                                print(f'Forwarded translation to Telegram group {tg_group_id}')
+                                if translated_text:
+                                    await telegram_bridge.send_to_telegram(tg_group_id, author_name, translated_text)
+                                    print(f'Forwarded translation to Telegram group {tg_group_id}')
+                                
+                                # Forward any media to Telegram too
+                                if message.attachments:
+                                    for attachment in message.attachments:
+                                        await telegram_bridge.send_media_to_telegram(tg_group_id, author_name, attachment)
+                                        print(f'Forwarded media to Telegram group {tg_group_id}')
                                 break
                     
                 except Exception as e:

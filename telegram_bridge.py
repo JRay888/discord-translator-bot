@@ -118,10 +118,11 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         if message.photo:
             # Get highest resolution photo
             photo = message.photo[-1]
-            file = await photo.get_file()
+            file = await telegram_app.bot.get_file(photo.file_id)
             
+            # Download using the file's URL (bot token is embedded)
             async with aiohttp.ClientSession() as session:
-                async with session.get(file.file_path) as resp:
+                async with session.get(f'https://api.telegram.org/file/bot{telegram_app.bot.token}/{file.file_path}') as resp:
                     if resp.status == 200:
                         data = await resp.read()
                         caption = f'🖼️ Photo from **[Telegram] {username}**'
@@ -133,10 +134,10 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
                         print(f'Forwarded Telegram photo from {username} to Discord')
         
         elif message.video:
-            file = await message.video.get_file()
+            file = await telegram_app.bot.get_file(message.video.file_id)
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(file.file_path) as resp:
+                async with session.get(f'https://api.telegram.org/file/bot{telegram_app.bot.token}/{file.file_path}') as resp:
                     if resp.status == 200:
                         data = await resp.read()
                         caption = f'🎥 Video from **[Telegram] {username}**'
@@ -148,10 +149,10 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
                         print(f'Forwarded Telegram video from {username} to Discord')
         
         elif message.document:
-            file = await message.document.get_file()
+            file = await telegram_app.bot.get_file(message.document.file_id)
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(file.file_path) as resp:
+                async with session.get(f'https://api.telegram.org/file/bot{telegram_app.bot.token}/{file.file_path}') as resp:
                     if resp.status == 200:
                         data = await resp.read()
                         caption = f'📄 File from **[Telegram] {username}**'
