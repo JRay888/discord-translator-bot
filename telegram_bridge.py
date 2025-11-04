@@ -310,9 +310,10 @@ async def start_telegram_bot(discord_bot_instance):
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
     print('🔧 Cleared any existing webhooks')
     
-    # Add handlers for both regular messages and channel posts
+    # Add handlers for both regular messages and channel posts (text and media)
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_message_handler))
-    telegram_app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST & filters.TEXT, telegram_message_handler))
+    telegram_app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, telegram_message_handler))
+    telegram_app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST, telegram_message_handler))
     telegram_app.add_handler(CommandHandler('chatid', telegram_get_chat_id))
     
     # Initialize and start manually (don't use run_polling - it tries to run its own loop)
