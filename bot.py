@@ -1105,12 +1105,13 @@ async def list_languages(ctx):
 @bot.event
 async def on_message(message):
     """Handle incoming messages for translations and Telegram bridge."""
-    # Ignore bot's own messages
-    if message.author.bot:
-        return
+    # Check if message is from bot
+    is_bot_message = message.author.bot
+    is_from_telegram = is_bot_message and message.content.startswith('**[Telegram]')
     
-    # Process commands first
-    await bot.process_commands(message)
+    # Process commands first (only for non-bot messages)
+    if not is_bot_message:
+        await bot.process_commands(message)
     
     # Skip if message is a command
     if message.content.startswith(bot.command_prefix):
@@ -1119,18 +1120,35 @@ async def on_message(message):
     source_channel_id = str(message.channel.id)
     
     # 1. Check if this channel is bridged to Telegram (if bridge is available)
-    if telegram_bridge.bridge_config and telegram_bridge.bridge_config.get('bridges'):
+    # Only forward if it's a real user message (not from Telegram already)
+    if not is_from_telegram and telegram_bridge.bridge_config and telegram_bridge.bridge_config.get('bridges'):
         for tg_group_id, bridge_info in telegram_bridge.bridge_config['bridges'].items():
             if bridge_info['discord_channel_id'] == source_channel_id:
-                # Forward to Telegram
-                username = message.author.display_name
-                await telegram_bridge.send_to_telegram(tg_group_id, username, message.content)
+                # Don't forward bot messages to Telegram (except from users)
+                if not is_bot_message:
+                    username = message.author.display_name
+                    await telegram_bridge.send_to_telegram(tg_group_id, username, message.content)
                 break
     
     # 2. Check if the message is from a channel in a translation group
+    # Allow Telegram messages through for translation, but skip other bot messages
+    if is_bot_message and not is_from_telegram:
+        return
+    
     for group_name, channels in language_config['groups'].items():
         if source_channel_id in channels:
             source_lang = channels[source_channel_id]
+            
+            # Extract actual message text if it's from Telegram
+            actual_message = message.content
+            author_name = message.author.display_name
+            if is_from_telegram:
+                # Extract text after "**[Telegram] Name:** "
+                import re
+                match = re.search(r'\*\*\[Telegram\] (.+?):\*\* (.+)', message.content)
+                if match:
+                    author_name = f"{match.group(1)} (Telegram)"
+                    actual_message = match.group(2)
             
             # Translate to all other channels in the same group
             for target_channel_id, target_lang in channels.items():
@@ -1146,9 +1164,9 @@ async def on_message(message):
                     if not target_channel or target_channel.guild.id != message.guild.id:
                         continue
                     
-                    # Translate the message
+                    # Translate the message (use extracted text for Telegram messages)
                     translator = GoogleTranslator(source=source_lang, target=target_lang)
-                    translated_text = translator.translate(message.content)
+                    translated_text = translator.translate(actual_message)
                     
                     # Create embed with translation
                     embed = discord.Embed(
@@ -1156,7 +1174,7 @@ async def on_message(message):
                         color=discord.Color.blue()
                     )
                     embed.set_author(
-                        name=f"{message.author.display_name} (from #{message.channel.name})",
+                        name=f"{author_name} (from #{message.channel.name})",
                         icon_url=message.author.avatar.url if message.author.avatar else None
                     )
                     embed.set_footer(text=f"{source_lang.upper()} → {target_lang.upper()} | Group: {group_name}")
