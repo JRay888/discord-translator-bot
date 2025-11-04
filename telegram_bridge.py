@@ -42,9 +42,15 @@ bridge_config = load_bridge_config()
 
 async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle messages from Telegram and forward to Discord."""
-    print(f'[Telegram] Received message: {update.message.text if update.message else "No message"}')
+    print(f'[Telegram] Update received: {update}')
+    print(f'[Telegram] Has message: {update.message is not None}')
+    if update.message:
+        print(f'[Telegram] Message text: {update.message.text}')
+        print(f'[Telegram] From user: {update.effective_user.first_name if update.effective_user else "Unknown"}')
+        print(f'[Telegram] Chat type: {update.effective_chat.type if update.effective_chat else "Unknown"}')
     
     if not update.message or not update.message.text:
+        print('[Telegram] Message has no text, skipping')
         return
     
     chat_id = str(update.effective_chat.id)
@@ -84,19 +90,27 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
 
 async def telegram_get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to get the current Telegram group ID."""
-    print(f'[Telegram] /chatid command received from {update.effective_user.first_name}')
+    print(f'[Telegram] /chatid command received!')
+    print(f'[Telegram] Update: {update}')
+    print(f'[Telegram] From user: {update.effective_user.first_name if update.effective_user else "Unknown"}')
     
-    chat_id = update.effective_chat.id
-    chat_title = update.effective_chat.title or "Private Chat"
-    
-    print(f'[Telegram] Chat ID: {chat_id}, Title: {chat_title}')
-    
-    await update.message.reply_text(
-        f'📋 **Chat Info:**\n'
-        f'Title: {chat_title}\n'
-        f'Chat ID: `{chat_id}`\n\n'
-        f'Use this ID in Discord with: `!linktelegraming <discord_channel_id> <language>`'
-    )
+    try:
+        chat_id = update.effective_chat.id
+        chat_title = update.effective_chat.title or "Private Chat"
+        
+        print(f'[Telegram] Chat ID: {chat_id}, Title: {chat_title}')
+        
+        await update.message.reply_text(
+            f'📋 **Chat Info:**\n'
+            f'Title: {chat_title}\n'
+            f'Chat ID: `{chat_id}`\n\n'
+            f'Use this ID in Discord with: `!linktelegram {chat_id} <discord_channel_id> <language>`'
+        )
+        print('[Telegram] Sent chat ID response')
+    except Exception as e:
+        print(f'[Telegram] Error in /chatid command: {e}')
+        import traceback
+        traceback.print_exc()
 
 
 async def send_to_telegram(telegram_group_id: str, username: str, message: str):
