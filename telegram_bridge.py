@@ -151,30 +151,34 @@ async def start_telegram_bot(discord_bot_instance):
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_message_handler))
     telegram_app.add_handler(CommandHandler('chatid', telegram_get_chat_id))
     
-    # Start polling in the background
+    # Start polling in the background using run_polling
     try:
-        await telegram_app.initialize()
-        await telegram_app.start()
-        
-        # Start polling without blocking
-        asyncio.create_task(telegram_app.updater.start_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        ))
+        # Don't await - let it run in background
+        asyncio.create_task(_run_telegram_polling(telegram_app))
         
         # Give it a moment to start
-        await asyncio.sleep(1)
+        await asyncio.sleep(2)
         
         print('✅ Telegram bridge started successfully')
         print(f'ℹ️ Telegram bot username: @{telegram_app.bot.username}')
         print(f'ℹ️ Listening for messages and /chatid commands...')
-        print(f'ℹ️ Polling active: {telegram_app.updater.running}')
         return telegram_app
     except Exception as e:
         print(f'❌ Error starting Telegram polling: {e}')
         import traceback
         traceback.print_exc()
         raise
+
+
+async def _run_telegram_polling(app):
+    """Background task to run Telegram polling."""
+    try:
+        print('🔄 Starting Telegram polling loop...')
+        await app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+    except Exception as e:
+        print(f'❌ Telegram polling error: {e}')
+        import traceback
+        traceback.print_exc()
 
 
 async def stop_telegram_bot():
