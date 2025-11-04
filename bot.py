@@ -1182,6 +1182,15 @@ async def on_message(message):
                     # Send to target channel
                     await target_channel.send(embed=embed)
                     
+                    # If target channel is bridged to Telegram, forward there too
+                    if telegram_bridge.bridge_config and telegram_bridge.bridge_config.get('bridges'):
+                        for tg_group_id, bridge_info in telegram_bridge.bridge_config['bridges'].items():
+                            if bridge_info['discord_channel_id'] == target_channel_id:
+                                # Forward the translated text to Telegram
+                                await telegram_bridge.send_to_telegram(tg_group_id, author_name, translated_text)
+                                print(f'Forwarded translation to Telegram group {tg_group_id}')
+                                break
+                    
                 except Exception as e:
                     print(f'Translation error for {target_channel_id} in group {group_name}: {e}')
                     # Continue to next channel even if one fails
