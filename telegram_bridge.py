@@ -39,6 +39,9 @@ def save_bridge_config(config):
 
 bridge_config = load_bridge_config()
 
+# Track seen Telegram chats for easy ID lookup
+seen_telegram_chats = {}  # chat_id: {'title': str, 'type': str, 'last_seen': datetime}
+
 
 async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle messages from Telegram and forward to Discord."""
@@ -59,6 +62,14 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
     
     chat_id = str(update.effective_chat.id)
     print(f'[Telegram] Processing message from chat {chat_id}')
+    
+    # Track this chat for easy lookup
+    from datetime import datetime
+    seen_telegram_chats[chat_id] = {
+        'title': update.effective_chat.title or 'Unknown',
+        'type': update.effective_chat.type.value if update.effective_chat.type else 'unknown',
+        'last_seen': datetime.utcnow()
+    }
     
     # Check if this Telegram group is bridged
     if chat_id not in bridge_config['bridges']:

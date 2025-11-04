@@ -1356,6 +1356,31 @@ async def list_bridges(ctx):
     await ctx.send(embed=embed)
 
 
+@bot.command(name='telegramchats')
+@commands.has_permissions(administrator=True)
+async def telegram_chats(ctx):
+    """List all Telegram chats the bot can see (to get their IDs)."""
+    if not telegram_bridge.seen_telegram_chats:
+        await ctx.send('💭 No Telegram chats detected yet. Send a message in your Telegram channel/group and try again.')
+        return
+    
+    embed = discord.Embed(
+        title='📱 Telegram Chats Detected',
+        description='Send a message in any Telegram channel/group to see its ID here.',
+        color=discord.Color.green()
+    )
+    
+    for chat_id, info in telegram_bridge.seen_telegram_chats.items():
+        embed.add_field(
+            name=f"{info['title']} ({info['type']})",
+            value=f'**ID:** `{chat_id}`\nLast seen: {info["last_seen"].strftime("%Y-%m-%d %H:%M UTC")}',
+            inline=False
+        )
+    
+    embed.set_footer(text='Use these IDs with: !linktelegram <chat_id> <discord_channel_id> <language>')
+    await ctx.send(embed=embed)
+
+
 @bot.event
 async def on_command_error(ctx, error):
     """Handle command errors."""
