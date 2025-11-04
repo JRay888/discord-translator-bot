@@ -1170,6 +1170,8 @@ async def on_message(message):
                     if not target_channel or target_channel.guild.id != message.guild.id:
                         continue
                     
+                    translated_text = None  # Initialize to avoid undefined variable errors
+                    
                     # Translate the message if there is text (use extracted text for Telegram messages)
                     if actual_message:
                         translator = GoogleTranslator(source=source_lang, target=target_lang)
