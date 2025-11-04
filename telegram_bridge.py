@@ -43,18 +43,22 @@ bridge_config = load_bridge_config()
 async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle messages from Telegram and forward to Discord."""
     print(f'[Telegram] Update received: {update}')
-    print(f'[Telegram] Has message: {update.message is not None}')
-    if update.message:
-        print(f'[Telegram] Message text: {update.message.text}')
-        print(f'[Telegram] From user: {update.effective_user.first_name if update.effective_user else "Unknown"}')
-        print(f'[Telegram] Chat type: {update.effective_chat.type if update.effective_chat else "Unknown"}')
     
-    if not update.message or not update.message.text:
+    # Support both regular messages and channel posts
+    message = update.message or update.channel_post
+    
+    print(f'[Telegram] Has message: {message is not None}')
+    if message:
+        print(f'[Telegram] Message text: {message.text}')
+        print(f'[Telegram] Chat type: {update.effective_chat.type if update.effective_chat else "Unknown"}')
+        print(f'[Telegram] Chat ID: {update.effective_chat.id if update.effective_chat else "Unknown"}')
+    
+    if not message or not message.text:
         print('[Telegram] Message has no text, skipping')
         return
     
     chat_id = str(update.effective_chat.id)
-    print(f'[Telegram] Message from chat {chat_id}')
+    print(f'[Telegram] Processing message from chat {chat_id}')
     
     # Check if this Telegram group is bridged
     if chat_id not in bridge_config['bridges']:
@@ -75,11 +79,17 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         return
     
     # Format message for Discord
-    username = update.effective_user.first_name
-    if update.effective_user.last_name:
-        username += f' {update.effective_user.last_name}'
+    # For channels, use channel name instead of user
+    if update.channel_post:
+        username = update.effective_chat.title or "Channel"
+    elif update.effective_user:
+        username = update.effective_user.first_name
+        if update.effective_user.last_name:
+            username += f' {update.effective_user.last_name}'
+    else:
+        username = "Unknown"
     
-    message_text = f'**[Telegram] {username}:** {update.message.text}'
+    message_text = f'**[Telegram] {username}:** {message.text}'
     
     try:
         await discord_channel.send(message_text)
@@ -161,8 +171,9 @@ async def start_telegram_bot(discord_bot_instance):
     await telegram_app.bot.delete_webhook(drop_pending_updates=True)
     print('🔧 Cleared any existing webhooks')
     
-    # Add handlers
+    # Add handlers for both regular messages and channel posts
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, telegram_message_handler))
+    telegram_app.add_handler(MessageHandler(filters.UpdateType.CHANNEL_POST & filters.TEXT, telegram_message_handler))
     telegram_app.add_handler(CommandHandler('chatid', telegram_get_chat_id))
     
     # Initialize and start manually (don't use run_polling - it tries to run its own loop)
