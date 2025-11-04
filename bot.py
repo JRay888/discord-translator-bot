@@ -1107,7 +1107,13 @@ async def on_message(message):
     """Handle incoming messages for translations and Telegram bridge."""
     # Check if message is from bot
     is_bot_message = message.author.bot
-    is_from_telegram = is_bot_message and message.content.startswith('**[Telegram]')
+    # Check if it's from Telegram (text or media with Telegram caption)
+    is_from_telegram = is_bot_message and (
+        message.content.startswith('**[Telegram]') or 
+        message.content.startswith('🖼️ Photo from **[Telegram]') or
+        message.content.startswith('🎥 Video from **[Telegram]') or
+        message.content.startswith('📄 File from **[Telegram]')
+    )
     
     # Process commands first (only for non-bot messages)
     if not is_bot_message:
