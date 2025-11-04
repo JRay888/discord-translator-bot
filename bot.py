@@ -1127,7 +1127,13 @@ async def on_message(message):
                 # Don't forward bot messages to Telegram (except from users)
                 if not is_bot_message:
                     username = message.author.display_name
-                    await telegram_bridge.send_to_telegram(tg_group_id, username, message.content)
+                    # Forward text if present
+                    if message.content:
+                        await telegram_bridge.send_to_telegram(tg_group_id, username, message.content)
+                    # Forward attachments (images, videos, files)
+                    if message.attachments:
+                        for attachment in message.attachments:
+                            await telegram_bridge.send_media_to_telegram(tg_group_id, username, attachment)
                 break
     
     # 2. Check if the message is from a channel in a translation group
@@ -1164,23 +1170,34 @@ async def on_message(message):
                     if not target_channel or target_channel.guild.id != message.guild.id:
                         continue
                     
-                    # Translate the message (use extracted text for Telegram messages)
-                    translator = GoogleTranslator(source=source_lang, target=target_lang)
-                    translated_text = translator.translate(actual_message)
+                    # Translate the message if there is text (use extracted text for Telegram messages)
+                    if actual_message:
+                        translator = GoogleTranslator(source=source_lang, target=target_lang)
+                        translated_text = translator.translate(actual_message)
+                        
+                        # Create embed with translation
+                        embed = discord.Embed(
+                            description=translated_text,
+                            color=discord.Color.blue()
+                        )
+                        embed.set_author(
+                            name=f"{author_name} (from #{message.channel.name})",
+                            icon_url=message.author.avatar.url if message.author.avatar else None
+                        )
+                        embed.set_footer(text=f"{source_lang.upper()} → {target_lang.upper()} | Group: {group_name}")
+                        
+                        # Send to target channel
+                        await target_channel.send(embed=embed)
                     
-                    # Create embed with translation
-                    embed = discord.Embed(
-                        description=translated_text,
-                        color=discord.Color.blue()
-                    )
-                    embed.set_author(
-                        name=f"{author_name} (from #{message.channel.name})",
-                        icon_url=message.author.avatar.url if message.author.avatar else None
-                    )
-                    embed.set_footer(text=f"{source_lang.upper()} → {target_lang.upper()} | Group: {group_name}")
-                    
-                    # Send to target channel
-                    await target_channel.send(embed=embed)
+                    # Forward attachments (images, videos, files) to other language channels
+                    if message.attachments:
+                        files_to_send = []
+                        for attachment in message.attachments:
+                            file = await attachment.to_file()
+                            files_to_send.append(file)
+                        
+                        caption = f"📎 Media from {author_name} (#{message.channel.name})"
+                        await target_channel.send(content=caption, files=files_to_send)
                     
                     # If target channel is bridged to Telegram, forward there too
                     if telegram_bridge.bridge_config and telegram_bridge.bridge_config.get('bridges'):

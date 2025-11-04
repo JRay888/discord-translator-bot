@@ -5,6 +5,7 @@ Bridges messages between Discord channels and Telegram groups
 import os
 import json
 import asyncio
+import io
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, ContextTypes, filters
 
@@ -55,9 +56,12 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         print(f'[Telegram] Message text: {message.text}')
         print(f'[Telegram] Chat type: {update.effective_chat.type if update.effective_chat else "Unknown"}')
         print(f'[Telegram] Chat ID: {update.effective_chat.id if update.effective_chat else "Unknown"}')
+        print(f'[Telegram] Has photo: {message.photo is not None if message else False}')
+        print(f'[Telegram] Has video: {message.video is not None if message else False}')
+        print(f'[Telegram] Has document: {message.document is not None if message else False}')
     
-    if not message or not message.text:
-        print('[Telegram] Message has no text, skipping')
+    if not message:
+        print('[Telegram] No message object')
         return
     
     chat_id = str(update.effective_chat.id)
@@ -89,7 +93,7 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         print(f'Discord channel {discord_channel_id} not found')
         return
     
-    # Format message for Discord
+    # Format username for Discord
     # For channels, use channel name instead of user
     if update.channel_post:
         username = update.effective_chat.title or "Channel"
@@ -100,13 +104,68 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
     else:
         username = "Unknown"
     
-    message_text = f'**[Telegram] {username}:** {message.text}'
-    
     try:
-        await discord_channel.send(message_text)
-        print(f'Forwarded Telegram message from {username} to Discord #{discord_channel.name}')
+        # Send text message if present
+        if message.text:
+            message_text = f'**[Telegram] {username}:** {message.text}'
+            await discord_channel.send(message_text)
+            print(f'Forwarded Telegram message from {username} to Discord #{discord_channel.name}')
+        
+        # Send media if present
+        import aiohttp
+        import discord as discord_lib
+        
+        if message.photo:
+            # Get highest resolution photo
+            photo = message.photo[-1]
+            file = await photo.get_file()
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file.file_path) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        caption = f'🖼️ Photo from **[Telegram] {username}**'
+                        if message.caption:
+                            caption += f': {message.caption}'
+                        
+                        discord_file = discord_lib.File(fp=io.BytesIO(data), filename='photo.jpg')
+                        await discord_channel.send(content=caption, file=discord_file)
+                        print(f'Forwarded Telegram photo from {username} to Discord')
+        
+        elif message.video:
+            file = await message.video.get_file()
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file.file_path) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        caption = f'🎥 Video from **[Telegram] {username}**'
+                        if message.caption:
+                            caption += f': {message.caption}'
+                        
+                        discord_file = discord_lib.File(fp=io.BytesIO(data), filename='video.mp4')
+                        await discord_channel.send(content=caption, file=discord_file)
+                        print(f'Forwarded Telegram video from {username} to Discord')
+        
+        elif message.document:
+            file = await message.document.get_file()
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file.file_path) as resp:
+                    if resp.status == 200:
+                        data = await resp.read()
+                        caption = f'📄 File from **[Telegram] {username}**'
+                        if message.caption:
+                            caption += f': {message.caption}'
+                        
+                        discord_file = discord_lib.File(fp=io.BytesIO(data), filename=message.document.file_name or 'file')
+                        await discord_channel.send(content=caption, file=discord_file)
+                        print(f'Forwarded Telegram document from {username} to Discord')
+        
     except Exception as e:
         print(f'Error forwarding to Discord: {e}')
+        import traceback
+        traceback.print_exc()
 
 
 async def telegram_get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -151,6 +210,68 @@ async def send_to_telegram(telegram_group_id: str, username: str, message: str):
         return True
     except Exception as e:
         print(f'Error forwarding to Telegram: {e}')
+        return False
+
+
+async def send_media_to_telegram(telegram_group_id: str, username: str, attachment):
+    """Send media (image/video/file) from Discord to Telegram."""
+    if not telegram_app:
+        print('Telegram app not initialized')
+        return False
+    
+    try:
+        import aiohttp
+        
+        # Download the file from Discord
+        async with aiohttp.ClientSession() as session:
+            async with session.get(attachment.url) as resp:
+                if resp.status == 200:
+                    file_data = await resp.read()
+                    
+                    caption = f'**[Discord] {username}:** {attachment.filename}'
+                    
+                    # Determine file type and send accordingly
+                    if attachment.content_type:
+                        if attachment.content_type.startswith('image/'):
+                            await telegram_app.bot.send_photo(
+                                chat_id=int(telegram_group_id),
+                                photo=file_data,
+                                caption=caption,
+                                parse_mode='Markdown'
+                            )
+                        elif attachment.content_type.startswith('video/'):
+                            await telegram_app.bot.send_video(
+                                chat_id=int(telegram_group_id),
+                                video=file_data,
+                                caption=caption,
+                                parse_mode='Markdown'
+                            )
+                        else:
+                            await telegram_app.bot.send_document(
+                                chat_id=int(telegram_group_id),
+                                document=file_data,
+                                caption=caption,
+                                filename=attachment.filename,
+                                parse_mode='Markdown'
+                            )
+                    else:
+                        # Unknown type, send as document
+                        await telegram_app.bot.send_document(
+                            chat_id=int(telegram_group_id),
+                            document=file_data,
+                            caption=caption,
+                            filename=attachment.filename,
+                            parse_mode='Markdown'
+                        )
+                    
+                    print(f'Forwarded media {attachment.filename} from {username} to Telegram group {telegram_group_id}')
+                    return True
+        
+        return False
+    except Exception as e:
+        print(f'Error forwarding media to Telegram: {e}')
+        import traceback
+        traceback.print_exc()
         return False
 
 
