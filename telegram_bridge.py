@@ -123,22 +123,39 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         import discord as discord_lib
         
         if message.photo:
-            # Get highest resolution photo
-            photo = message.photo[-1]
-            file = await telegram_app.bot.get_file(photo.file_id)
-            
-            # Download using the file's URL (bot token is embedded)
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f'https://api.telegram.org/file/bot{telegram_app.bot.token}/{file.file_path}') as resp:
-                    if resp.status == 200:
-                        data = await resp.read()
-                        caption = f'🖼️ Photo from **[Telegram] {username}**'
-                        if message.caption:
-                            caption += f': {message.caption}'
-                        
-                        discord_file = discord_lib.File(fp=io.BytesIO(data), filename='photo.jpg')
-                        await discord_channel.send(content=caption, file=discord_file)
-                        print(f'Forwarded Telegram photo from {username} to Discord')
+            print(f'[Telegram] Found photo, starting download...')
+            try:
+                # Get highest resolution photo
+                photo = message.photo[-1]
+                print(f'[Telegram] Getting file for photo: {photo.file_id}')
+                file = await telegram_app.bot.get_file(photo.file_id)
+                print(f'[Telegram] Got file path: {file.file_path}')
+                
+                # Download using the file's URL (bot token is embedded)
+                file_url = f'https://api.telegram.org/file/bot{telegram_app.bot.token}/{file.file_path}'
+                print(f'[Telegram] Downloading from: {file_url[:50]}...')
+                
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(file_url) as resp:
+                        print(f'[Telegram] Download response status: {resp.status}')
+                        if resp.status == 200:
+                            data = await resp.read()
+                            print(f'[Telegram] Downloaded {len(data)} bytes')
+                            
+                            caption = f'🖼️ Photo from **[Telegram] {username}**'
+                            if message.caption:
+                                caption += f': {message.caption}'
+                            
+                            discord_file = discord_lib.File(fp=io.BytesIO(data), filename='photo.jpg')
+                            print(f'[Telegram] Sending to Discord channel {discord_channel.name}')
+                            await discord_channel.send(content=caption, file=discord_file)
+                            print(f'✅ Forwarded Telegram photo from {username} to Discord')
+                        else:
+                            print(f'❌ Failed to download photo: HTTP {resp.status}')
+            except Exception as photo_error:
+                print(f'❌ Error forwarding photo: {photo_error}')
+                import traceback
+                traceback.print_exc()
         
         elif message.video:
             file = await telegram_app.bot.get_file(message.video.file_id)
