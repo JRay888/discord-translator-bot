@@ -64,6 +64,12 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
         print('[Telegram] No message object')
         return
     
+    # Skip if no text AND no media
+    has_media = message.photo or message.video or message.document
+    if not message.text and not has_media:
+        print('[Telegram] Message has no text or media, skipping')
+        return
+    
     chat_id = str(update.effective_chat.id)
     print(f'[Telegram] Processing message from chat {chat_id}')
     
