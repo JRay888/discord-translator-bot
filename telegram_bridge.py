@@ -118,6 +118,7 @@ async def telegram_message_handler(update: Update, context: ContextTypes.DEFAULT
             print(f'Forwarded Telegram message from {username} to Discord #{discord_channel.name}')
         
         # Send media if present
+        print(f'[Telegram] Checking for media to forward...')
         import aiohttp
         import discord as discord_lib
         
