@@ -174,38 +174,131 @@ If you want to use the member registration system:
 
 New members will now automatically receive a registration prompt when they join!
 
-## Usage Examples
+## Command Examples
 
-### Setting up Translation Groups
+### Registration Setup Commands
 
-Create a group where messages are automatically translated between channels:
+```bash
+# Set up holding room for new members
+# Run this in the channel where new members will register
+!setholdingroom
 
+# Set up leadership approval channel
+# Run this in the channel where R4/R5 approval requests go
+!setleadershipchannel
+
+# Set up member log channel
+# Run this in the channel where all registrations are logged
+!setmemberlog
+
+# Set up general roles channel (for all members)
+!setroleschannel
+
+# Set up leadership roles channel (for R4/R5 only)
+!setleadershiproleschannel
+
+# Configure which ranks require approval
+!requireapproval R4 on      # R4 now requires approval
+!requireapproval R1 off     # R1 auto-approved
+!approvalstatus             # Check current approval settings
 ```
+
+### Member Management Commands
+
+```bash
+# Let a member update their own profile
+!reregister
+# This opens a registration form for the user
+
+# Force a member to re-register (clears their data)
+!updateprofile @username
+
+# Sync a member's registration based on their current roles
+# Use this AFTER manually changing someone's roles
+!syncmember @username
+# Example: If you manually gave them GNB role and R4 role,
+# this will update their registration data and nickname
+
+# Directly set a member's complete profile
+# Format: !setmember @user IGN GANG RANK
+!setmember @username "Charles Vane" GNB R3
+!setmember @username JohnDoe ABC R5
+!setmember @username "Player Name" XYZ R1
+# Note: Use quotes if IGN has spaces
+# This updates roles, nickname, and registration data all at once
+
+# Bulk update all members based on their current roles
+!fixnicknames
+# Scans all members, updates nicknames and registration data
+```
+
+### Translation Groups
+
+```bash
 # Create a group for general chat
 !creategroup general
 
-# In your #english channel
+# In your #english channel, run:
 !addchannel general en
 
-# In your #spanish channel
+# In your #spanish channel, run:
 !addchannel general es
 
-# In your #french channel
+# In your #french channel, run:
 !addchannel general fr
+
+# Now messages in any of these channels will automatically 
+# appear translated in the other channels!
+
+# View all groups and their channels
+!listgroups
+
+# Remove current channel from its group
+!removechannel
+
+# Delete an entire group
+!deletegroup general
 ```
 
-Now messages in any of these channels will automatically appear translated in the other channels!
+### Flag Reactions
 
-### Setting up Flag Reactions
-
-Enable on-demand translation via flag reactions:
-
-```
-# In any channel where you want flag reactions
+```bash
+# Enable flag reactions in current channel
 !enableflags
+# Users can now react with flag emojis (🇪🇸, 🇫🇷, 🇯🇵, etc.) 
+# to get instant translations
+
+# Disable flag reactions
+!disableflags
 ```
 
-Users can now react to any message with a flag emoji (🇪🇸, 🇫🇷, 🇯🇵, etc.) to get an instant translation!
+### Telegram Bridge
+
+```bash
+# First, get Telegram chat IDs by checking what the bot can see
+!telegramchats
+# Send a message in your Telegram group, then run this to see its ID
+
+# Link a Telegram group to a Discord channel
+# Format: !linktelegram <telegram_group_id> <discord_channel_id> <language>
+!linktelegram -1001234567890 1234567890123456789 es
+
+# List all active bridges
+!listbridges
+
+# Unlink a Telegram group
+!unlinktelegram -1001234567890
+```
+
+### General Information Commands
+
+```bash
+# View current channel's translation settings
+!channelinfo
+
+# List all available language codes
+!listlangs
+```
 
 ### Supported Flag Emojis
 
@@ -310,15 +403,34 @@ This will:
 - Try to preserve existing IGN from their current nickname
 
 #### Update Individual Members
-If you manually change a member's roles and need to update their registration:
 
-```bash
-# Sync registration data based on current roles
-!syncmember @username
+**Common Scenarios:**
 
-# Or directly set everything at once
-!setmember @username PlayerIGN GNB R3
-```
+1. **User registered with wrong gang, you manually changed their gang role:**
+   ```bash
+   # After changing the gang role, sync their registration
+   !syncmember @username
+   ```
+
+2. **User registered with wrong rank, you need to change it:**
+   ```bash
+   # Use setmember to change rank (updates roles + registration + nickname)
+   !setmember @username "Charles Vane" GNB R3
+   ```
+
+3. **User has wrong everything (IGN, gang, rank):**
+   ```bash
+   # Set everything at once
+   !setmember @username NewIGN XYZ R5
+   ```
+
+**Important Notes:**
+- `!syncmember` reads from current roles → updates registration data
+  - Use AFTER manually changing roles
+  - **Limitation:** Can't distinguish R1/R2/R3 (all use Pirate role)
+- `!setmember` sets everything → updates roles AND registration data
+  - Use to change rank from R1→R3, R2→R3, etc.
+  - Use quotes around IGN if it has spaces: `"Player Name"`
 
 #### Allow Members to Update Themselves
 Members can update their own profile:
