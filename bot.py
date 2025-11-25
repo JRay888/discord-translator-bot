@@ -301,19 +301,14 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
             old_data = registration_config['registered_members'][member_id_str]
             old_rank = old_data['rank']
             
-            # Remove old rank roles
-            if old_rank in ['R1', 'R2', 'R3']:
-                pirate_role = discord.utils.get(guild.roles, name='Pirate')
-                if pirate_role and pirate_role in member.roles:
-                    await member.remove_roles(pirate_role)
-            elif old_rank == 'R4':
-                r4_role = discord.utils.get(guild.roles, name='R4')
-                if r4_role and r4_role in member.roles:
-                    await member.remove_roles(r4_role)
-            elif old_rank == 'R5':
-                r5_role = discord.utils.get(guild.roles, name='R5')
-                if r5_role and r5_role in member.roles:
-                    await member.remove_roles(r5_role)
+            # Remove old rank role (could be R1, R2, R3, R4, R5, or Pirate)
+            old_rank_role = discord.utils.get(guild.roles, name=old_rank)
+            if old_rank_role and old_rank_role in member.roles:
+                await member.remove_roles(old_rank_role)
+            # Also remove Pirate role if they have it (backward compatibility)
+            pirate_role = discord.utils.get(guild.roles, name='Pirate')
+            if pirate_role and pirate_role in member.roles:
+                await member.remove_roles(pirate_role)
             
             # Remove old gang role if gang code changed
             old_gang = old_data['gang_code']
@@ -367,24 +362,12 @@ class RegistrationModal(ui.Modal, title='Server Registration'):
                 if not genuser_role:
                     genuser_role = await guild.create_role(name='GenUser', mentionable=True)
                 roles_to_add.append(genuser_role)
-                # R1-R3 get Pirate role
-                if rank_input in ['R1', 'R2', 'R3']:
-                    pirate_role = discord.utils.get(guild.roles, name='Pirate')
-                    if not pirate_role:
-                        pirate_role = await guild.create_role(name='Pirate', mentionable=True)
-                    roles_to_add.append(pirate_role)
-                # R4 gets R4 role
-                elif rank_input == 'R4':
-                    r4_role = discord.utils.get(guild.roles, name='R4')
-                    if not r4_role:
-                        r4_role = await guild.create_role(name='R4', mentionable=True)
-                    roles_to_add.append(r4_role)
-                # R5 gets R5 role
-                elif rank_input == 'R5':
-                    r5_role = discord.utils.get(guild.roles, name='R5')
-                    if not r5_role:
-                        r5_role = await guild.create_role(name='R5', mentionable=True)
-                    roles_to_add.append(r5_role)
+                
+                # Add rank-specific role (R1, R2, R3, R4, or R5)
+                rank_role = discord.utils.get(guild.roles, name=rank_input)
+                if not rank_role:
+                    rank_role = await guild.create_role(name=rank_input, mentionable=True)
+                roles_to_add.append(rank_role)
                 
                 # Add all roles
                 await member.add_roles(*roles_to_add)
@@ -525,23 +508,11 @@ class LeadershipApprovalView(ui.View):
             rank = pending_data['rank']
             roles_to_add = []
             
-            # R1-R3 get Pirate role
-            if rank in ['R1', 'R2', 'R3']:
-                rank_role = discord.utils.get(interaction.guild.roles, name='Pirate')
+            # Get or create rank-specific role (R1, R2, R3, R4, or R5)
+            if rank in ['R1', 'R2', 'R3', 'R4', 'R5']:
+                rank_role = discord.utils.get(interaction.guild.roles, name=rank)
                 if not rank_role:
-                    rank_role = await interaction.guild.create_role(name='Pirate', mentionable=True)
-                roles_to_add.append(rank_role)
-            # R4 gets R4 role
-            elif rank == 'R4':
-                rank_role = discord.utils.get(interaction.guild.roles, name='R4')
-                if not rank_role:
-                    rank_role = await interaction.guild.create_role(name='R4', mentionable=True)
-                roles_to_add.append(rank_role)
-            # R5 gets R5 role
-            elif rank == 'R5':
-                rank_role = discord.utils.get(interaction.guild.roles, name='R5')
-                if not rank_role:
-                    rank_role = await interaction.guild.create_role(name='R5', mentionable=True)
+                    rank_role = await interaction.guild.create_role(name=rank, mentionable=True)
                 roles_to_add.append(rank_role)
             else:
                 await interaction.response.send_message('\u274c Invalid rank in approval.', ephemeral=True)
@@ -890,11 +861,11 @@ async def sync_member(ctx, member: discord.Member):
         # Check if it's a gang code (3 uppercase letters)
         if re.match(r'^[A-Z]{3}$', role.name):
             member_gang = role.name
-        # Check for rank roles
-        elif role.name in ['R4', 'R5']:
+        # Check for rank roles (R1, R2, R3, R4, R5)
+        elif role.name in ['R1', 'R2', 'R3', 'R4', 'R5']:
             member_rank = role.name
-        elif role.name == 'Pirate':
-            # Try to determine R1-R3 from registration or default to R1
+        # Backward compatibility: if they have Pirate role, check registration
+        elif role.name == 'Pirate' and not member_rank:
             if member_id_str in registration_config['registered_members']:
                 current_rank = registration_config['registered_members'][member_id_str].get('rank')
                 if current_rank in ['R1', 'R2', 'R3']:
@@ -971,28 +942,22 @@ async def set_member(ctx, member: discord.Member, ign: str, gang_code: str, rank
         if gang_role not in member.roles:
             await member.add_roles(gang_role)
         
-        # Remove old rank roles
-        pirate_role = discord.utils.get(ctx.guild.roles, name='Pirate')
-        r4_role = discord.utils.get(ctx.guild.roles, name='R4')
-        r5_role = discord.utils.get(ctx.guild.roles, name='R5')
+        # Remove all old rank roles (R1, R2, R3, R4, R5, Pirate)
+        rank_role_names = ['R1', 'R2', 'R3', 'R4', 'R5', 'Pirate']
+        roles_to_remove = []
+        for role_name in rank_role_names:
+            role = discord.utils.get(ctx.guild.roles, name=role_name)
+            if role and role in member.roles:
+                roles_to_remove.append(role)
         
-        roles_to_remove = [r for r in [pirate_role, r4_role, r5_role] if r and r in member.roles]
         if roles_to_remove:
             await member.remove_roles(*roles_to_remove)
         
-        # Add new rank role
-        if rank in ['R1', 'R2', 'R3']:
-            if not pirate_role:
-                pirate_role = await ctx.guild.create_role(name='Pirate', mentionable=True)
-            await member.add_roles(pirate_role)
-        elif rank == 'R4':
-            if not r4_role:
-                r4_role = await ctx.guild.create_role(name='R4', mentionable=True)
-            await member.add_roles(r4_role)
-        elif rank == 'R5':
-            if not r5_role:
-                r5_role = await ctx.guild.create_role(name='R5', mentionable=True)
-            await member.add_roles(r5_role)
+        # Add new rank role (R1, R2, R3, R4, or R5)
+        rank_role = discord.utils.get(ctx.guild.roles, name=rank)
+        if not rank_role:
+            rank_role = await ctx.guild.create_role(name=rank, mentionable=True)
+        await member.add_roles(rank_role)
         
         # Update registration data
         registration_config['registered_members'][member_id_str] = {
@@ -1037,13 +1002,20 @@ async def fix_nicknames(ctx):
             # Check if it's a gang code (3 uppercase letters)
             if re.match(r'^[A-Z]{3}$', role.name):
                 member_gang = role.name
-            # Check for rank roles
-            elif role.name in ['R4', 'R5']:
+            # Check for rank roles (R1, R2, R3, R4, R5)
+            elif role.name in ['R1', 'R2', 'R3', 'R4', 'R5']:
                 member_rank = role.name
-            elif role.name == 'Pirate':
-                # Try to determine R1-R3 from other info or default to R1
-                if not member_rank or member_rank not in ['R1', 'R2', 'R3']:
-                    member_rank = 'R1'  # Default for Pirates
+            # Backward compatibility: if they have Pirate role, check registration
+            elif role.name == 'Pirate' and not member_rank:
+                member_id_str = str(member.id)
+                if member_id_str in registration_config['registered_members']:
+                    current_rank = registration_config['registered_members'][member_id_str].get('rank')
+                    if current_rank in ['R1', 'R2', 'R3']:
+                        member_rank = current_rank
+                    else:
+                        member_rank = 'R1'
+                else:
+                    member_rank = 'R1'
         
         # If we found both gang and rank, update nickname AND registration data
         if member_gang and member_rank:
