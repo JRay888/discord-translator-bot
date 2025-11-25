@@ -579,16 +579,25 @@ class LeadershipApprovalView(ui.View):
             # Send role channel redirects
             await send_role_channel_redirects(interaction.guild, member, rank)
             
-            # Update the message
+            # Respond to the interaction FIRST before it times out
+            await interaction.response.send_message(f'\u2705 {member.mention} approved for {rank}!', ephemeral=True)
+            
+            # Update the message AFTER responding
             embed = interaction.message.embeds[0]
             embed.color = discord.Color.green()
             embed.add_field(name='Status', value=f'\u2705 Approved by {interaction.user.mention}', inline=False)
             
             await interaction.message.edit(embed=embed, view=None)
-            await interaction.response.send_message(f'\u2705 {member.mention} approved for {rank}!', ephemeral=True)
             
         except Exception as e:
-            await interaction.response.send_message(f'❌ Error approving member: {str(e)}', ephemeral=True)
+            # Check if we've already responded to the interaction
+            try:
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f'❌ Error approving member: {str(e)}', ephemeral=True)
+                else:
+                    await interaction.followup.send(f'❌ Error approving member: {str(e)}', ephemeral=True)
+            except:
+                pass
     
     @ui.button(label='Deny', style=discord.ButtonStyle.danger, custom_id='deny_leadership')
     async def deny_button(self, interaction: discord.Interaction, button: ui.Button):
