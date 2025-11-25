@@ -2,7 +2,7 @@
 
 A Discord bot that automatically translates messages to different languages based on channel settings. Perfect for multilingual Discord servers where different channels are dedicated to specific languages.
 
-## Features
+## New Features
 
 ### Translation Features
 - 🌍 **Multi-language support** - Supports 100+ languages via Google Translate
