@@ -24,16 +24,27 @@ A Discord bot that automatically translates messages to different languages base
 
 ## Commands
 
-### Registration Commands
+### Registration Setup Commands
 
 | Command | Description | Permission Required |
 |---------|-------------|-------------------|
 | `!setholdingroom` | Set current channel as the holding room for new members | Administrator |
 | `!setleadershipchannel` | Set current channel for approval requests | Administrator |
 | `!setmemberlog` | Set current channel for member registration logs | Administrator |
+| `!setroleschannel` | Set general roles channel (all members redirected here) | Administrator |
+| `!setleadershiproleschannel` | Set leadership roles channel (R4/R5 only) | Administrator |
 | `!requireapproval <rank> <on\|off>` | Toggle approval requirement for a rank (e.g., `!requireapproval R3 on`) | Administrator |
 | `!approvalstatus` | View which ranks require approval | Administrator |
-| `!fixnicknames` | Update all member nicknames based on their roles | Administrator |
+
+### Member Management Commands
+
+| Command | Description | Permission Required |
+|---------|-------------|-------------------|
+| `!reregister` | Update your own profile (IGN, Gang, or Rank) | None |
+| `!updateprofile @user` | Clear a member's registration so they can re-register | Administrator |
+| `!syncmember @user` | Sync registration data based on member's current roles | Administrator |
+| `!setmember @user <IGN> <gang> <rank>` | Directly set a member's profile and update roles (e.g., `!setmember @user PlayerName GNB R3`) | Administrator |
+| `!fixnicknames` | Update all member nicknames and registration data based on their roles | Administrator |
 
 ### Translation Groups
 
@@ -51,6 +62,15 @@ A Discord bot that automatically translates messages to different languages base
 |---------|-------------|-------------------|
 | `!enableflags` | Enable flag reactions in current channel | Manage Channels |
 | `!disableflags` | Disable flag reactions in current channel | Manage Channels |
+
+### Telegram Bridge Commands
+
+| Command | Description | Permission Required |
+|---------|-------------|-------------------|
+| `!linktelegram <tg_id> <discord_ch_id> <lang>` | Link a Telegram group to a Discord channel (e.g., `!linktelegram -1001234567890 1234567890123456789 es`) | Administrator |
+| `!unlinktelegram <tg_id>` | Unlink a Telegram group from Discord | Administrator |
+| `!listbridges` | List all active Telegram-Discord bridges | Administrator |
+| `!telegramchats` | List all Telegram chats the bot can see (to get their IDs) | Administrator |
 
 ### General
 
@@ -273,8 +293,9 @@ Users can now react to any message with a flag emoji (🇪🇸, 🇫🇷, 🇯�
 !requireapproval R5 off
 ```
 
-### Fixing Existing Members
+### Managing Members
 
+#### Bulk Update All Members
 For members already in the server who didn't go through registration:
 
 ```bash
@@ -285,7 +306,33 @@ This will:
 - Scan all members
 - Read their gang code and rank from their roles
 - Update their nicknames to `[GangCode][Rank]:IGN` format
+- Update registration data to match their current roles
 - Try to preserve existing IGN from their current nickname
+
+#### Update Individual Members
+If you manually change a member's roles and need to update their registration:
+
+```bash
+# Sync registration data based on current roles
+!syncmember @username
+
+# Or directly set everything at once
+!setmember @username PlayerIGN GNB R3
+```
+
+#### Allow Members to Update Themselves
+Members can update their own profile:
+
+```bash
+!reregister
+```
+
+#### Force Re-registration
+Clear a member's registration so they can register again:
+
+```bash
+!updateprofile @username
+```
 
 ### Railway Deployment
 
