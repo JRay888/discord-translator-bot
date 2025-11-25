@@ -876,6 +876,142 @@ async def update_profile(ctx, member: discord.Member):
         await ctx.send(f'✅ {member.mention}\'s registration has been cleared, but I couldn\'t DM them. Please let them know to re-register.')
 
 
+@bot.command(name='syncmember', help='Sync a member\'s registration data based on their current roles. Usage: !syncmember @user')
+@commands.has_permissions(administrator=True)
+async def sync_member(ctx, member: discord.Member):
+    """Sync a member's registration data based on their current roles and nickname."""
+    member_id_str = str(member.id)
+    
+    # Find gang code and rank from roles
+    member_gang = None
+    member_rank = None
+    
+    for role in member.roles:
+        # Check if it's a gang code (3 uppercase letters)
+        if re.match(r'^[A-Z]{3}$', role.name):
+            member_gang = role.name
+        # Check for rank roles
+        elif role.name in ['R4', 'R5']:
+            member_rank = role.name
+        elif role.name == 'Pirate':
+            # Try to determine R1-R3 from registration or default to R1
+            if member_id_str in registration_config['registered_members']:
+                current_rank = registration_config['registered_members'][member_id_str].get('rank')
+                if current_rank in ['R1', 'R2', 'R3']:
+                    member_rank = current_rank
+                else:
+                    member_rank = 'R1'
+            else:
+                member_rank = 'R1'
+    
+    if not member_gang or not member_rank:
+        await ctx.send(f'❌ {member.mention} does not have proper gang/rank roles (need 3-letter gang code + R1-R5/Pirate role).')
+        return
+    
+    # Try to extract IGN from current nickname
+    current_nick = member.nick if member.nick else member.name
+    match = re.match(r'\[[A-Z]{3}\]\[R[1-5]\]:(.+)', current_nick)
+    if match:
+        ign = match.group(1)
+    elif member_id_str in registration_config['registered_members']:
+        ign = registration_config['registered_members'][member_id_str]['ign']
+    else:
+        ign = current_nick
+    
+    # Update registration data
+    registration_config['registered_members'][member_id_str] = {
+        'ign': ign,
+        'gang_code': member_gang,
+        'rank': member_rank
+    }
+    save_registration_config(registration_config)
+    
+    # Update nickname
+    new_nickname = f"[{member_gang}][{member_rank}]:{ign}"
+    try:
+        await member.edit(nick=new_nickname)
+        await ctx.send(f'✅ Synced {member.mention}\n**IGN:** {ign}\n**Gang:** {member_gang}\n**Rank:** {member_rank}')
+    except discord.Forbidden:
+        await ctx.send(f'✅ Registration data synced for {member.mention}, but I cannot change their nickname (missing permissions).')
+    except Exception as e:
+        await ctx.send(f'❌ Error: {str(e)}')
+
+
+@bot.command(name='setmember', help='Set a member\'s profile directly. Usage: !setmember @user <IGN> <gang_code> <rank>')
+@commands.has_permissions(administrator=True)
+async def set_member(ctx, member: discord.Member, ign: str, gang_code: str, rank: str):
+    """Directly set a member's IGN, gang code, and rank."""
+    member_id_str = str(member.id)
+    
+    # Validate inputs
+    gang_code = gang_code.upper().strip()
+    rank = rank.upper().strip()
+    ign = ign.strip()
+    
+    if not re.match(r'^[A-Z]{3}$', gang_code):
+        await ctx.send('❌ Gang code must be exactly 3 letters!')
+        return
+    
+    if not re.match(r'^R[1-5]$', rank):
+        await ctx.send('❌ Rank must be R1, R2, R3, R4, or R5!')
+        return
+    
+    try:
+        # Get or create gang role
+        gang_role = discord.utils.get(ctx.guild.roles, name=gang_code)
+        if not gang_role:
+            gang_role = await ctx.guild.create_role(name=gang_code, mentionable=True, hoist=True)
+        
+        # Remove old gang roles (3-letter codes)
+        for role in member.roles:
+            if re.match(r'^[A-Z]{3}$', role.name) and role.name != gang_code:
+                await member.remove_roles(role)
+        
+        # Add new gang role
+        if gang_role not in member.roles:
+            await member.add_roles(gang_role)
+        
+        # Remove old rank roles
+        pirate_role = discord.utils.get(ctx.guild.roles, name='Pirate')
+        r4_role = discord.utils.get(ctx.guild.roles, name='R4')
+        r5_role = discord.utils.get(ctx.guild.roles, name='R5')
+        
+        roles_to_remove = [r for r in [pirate_role, r4_role, r5_role] if r and r in member.roles]
+        if roles_to_remove:
+            await member.remove_roles(*roles_to_remove)
+        
+        # Add new rank role
+        if rank in ['R1', 'R2', 'R3']:
+            if not pirate_role:
+                pirate_role = await ctx.guild.create_role(name='Pirate', mentionable=True)
+            await member.add_roles(pirate_role)
+        elif rank == 'R4':
+            if not r4_role:
+                r4_role = await ctx.guild.create_role(name='R4', mentionable=True)
+            await member.add_roles(r4_role)
+        elif rank == 'R5':
+            if not r5_role:
+                r5_role = await ctx.guild.create_role(name='R5', mentionable=True)
+            await member.add_roles(r5_role)
+        
+        # Update registration data
+        registration_config['registered_members'][member_id_str] = {
+            'ign': ign,
+            'gang_code': gang_code,
+            'rank': rank
+        }
+        save_registration_config(registration_config)
+        
+        # Update nickname
+        new_nickname = f"[{gang_code}][{rank}]:{ign}"
+        await member.edit(nick=new_nickname)
+        
+        await ctx.send(f'✅ Updated {member.mention}\n**IGN:** {ign}\n**Gang:** {gang_code}\n**Rank:** {rank}')
+        
+    except Exception as e:
+        await ctx.send(f'❌ Error: {str(e)}')
+
+
 @bot.command(name='fixnicknames', help='Update nicknames for all members based on their roles')
 @commands.has_permissions(administrator=True)
 async def fix_nicknames(ctx):
@@ -909,7 +1045,7 @@ async def fix_nicknames(ctx):
                 if not member_rank or member_rank not in ['R1', 'R2', 'R3']:
                     member_rank = 'R1'  # Default for Pirates
         
-        # If we found both gang and rank, update nickname
+        # If we found both gang and rank, update nickname AND registration data
         if member_gang and member_rank:
             # Try to extract IGN from current nickname or use username
             current_nick = member.nick if member.nick else member.name
@@ -927,6 +1063,13 @@ async def fix_nicknames(ctx):
             
             new_nickname = f"[{member_gang}][{member_rank}]:{ign}"
             
+            # Update registration data to match roles
+            registration_config['registered_members'][str(member.id)] = {
+                'ign': ign,
+                'gang_code': member_gang,
+                'rank': member_rank
+            }
+            
             try:
                 if member.nick != new_nickname:
                     await member.edit(nick=new_nickname)
@@ -936,6 +1079,9 @@ async def fix_nicknames(ctx):
             except Exception as e:
                 print(f'Error updating {member.name}: {e}')
                 error_count += 1
+    
+    # Save updated registration data
+    save_registration_config(registration_config)
     
     await ctx.send(f'✅ Nickname fix complete!\n'
                    f'• **Updated:** {fixed_count} members\n'
